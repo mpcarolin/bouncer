@@ -1,0 +1,72 @@
+{
+ "id": "neg-tiktok-login",
+ "kind": "negative",
+ "category": "login-wall",
+ "stage": 1,
+ "round": 2,
+ "note": "Login modal; generic detector DOES pick it.",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "other"
+ },
+ "expected": [
+  {
+   "action": "not_consent"
+  }
+ ],
+ "detectorPicked": true,
+ "fullText": "Skip Log in to TikTok Use QR code Use phone or email Continue with Facebook Continue with Google Continue with Apple By continuing, you agree to TikTok’s Terms of Service and confirm that you have read TikTok’s Privacy Policy. Don’t have an account? Sign up",
+ "banner": {
+  "url": "https://www.tiktok.com/explore",
+  "vendor": "generic",
+  "selector": "div.css-1r8oxhk-5b89d02d--DivModalContainer.e1mtsrs50",
+  "text": "Skip Log in to TikTok Use QR code Use phone or email Continue with Facebook Continue with Google Continue with Apple By continuing, you agree to TikTok’s Terms of Service and confirm that you have read TikTok’s Privacy Policy. Don’t have an account? Sign up",
+  "controls": [
+   {
+    "i": 0,
+    "role": "button",
+    "label": "Skip"
+   },
+   {
+    "i": 1,
+    "role": "link",
+    "label": "Use QR code"
+   },
+   {
+    "i": 2,
+    "role": "link",
+    "label": "Use phone or email"
+   },
+   {
+    "i": 3,
+    "role": "link",
+    "label": "Continue with Facebook"
+   },
+   {
+    "i": 4,
+    "role": "link",
+    "label": "Continue with Google"
+   },
+   {
+    "i": 5,
+    "role": "link",
+    "label": "Continue with Apple"
+   },
+   {
+    "i": 6,
+    "role": "link",
+    "label": "Terms of Service"
+   },
+   {
+    "i": 7,
+    "role": "link",
+    "label": "Privacy Policy"
+   },
+   {
+    "i": 8,
+    "role": "link",
+    "label": "Sign up"
+   }
+  ]
+ }
+}

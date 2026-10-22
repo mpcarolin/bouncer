@@ -1,0 +1,48 @@
+{
+ "id": "hubspot",
+ "stage": 1,
+ "note": "HubSpot home-grown banner, Decline all present.",
+ "capturedAt": "2026-10-22",
+ "expected": [
+  {
+   "action": "reject",
+   "index": 3
+  }
+ ],
+ "banner": {
+  "url": "https://www.hubspot.com/",
+  "vendor": "hubspot",
+  "selector": "#hs-eu-cookie-confirmation",
+  "text": "× close We use cookies to improve HubSpot’s site. Some cookies are necessary for our website and services to function properly. Other cookies are optional and help personalize your experience, including advertising and analytics. You can consent to all cookies, decline all optional cookies, or manage optional cookies. Without a selection, our default cookie settings will apply. You can change your preferences at any time. To learn more, check out our Cookie Policy. Accept All Decline All Manage Cookies",
+  "controls": [
+   {
+    "i": 0,
+    "role": "button",
+    "label": "close"
+   },
+   {
+    "i": 1,
+    "role": "link",
+    "label": "Cookie Policy"
+   },
+   {
+    "i": 2,
+    "role": "button",
+    "label": "Accept all",
+    "id": "hs-eu-confirmation-button"
+   },
+   {
+    "i": 3,
+    "role": "button",
+    "label": "Decline all",
+    "id": "hs-eu-decline-button"
+   },
+   {
+    "i": 4,
+    "role": "button",
+    "label": "Manage Cookies",
+    "id": "hs-eu-cookie-settings-button"
+   }
+  ]
+ }
+}

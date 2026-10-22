@@ -1,0 +1,51 @@
+{
+ "id": "huel-onetrust",
+ "kind": "positive",
+ "category": "consent-banner",
+ "stage": 1,
+ "round": 2,
+ "note": "OneTrust; reject is labelled \"Required cookies only\".",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "consent"
+ },
+ "expected": [
+  {
+   "action": "reject",
+   "index": 2
+  }
+ ],
+ "detectorPicked": true,
+ "fullText": "By clicking 'Accept' you agree to the use of Cookies, which we use to give you the best online experience. For more information please visit our Privacy Policy. Cookie Settings Required cookies only Accept",
+ "banner": {
+  "url": "https://huel.com/",
+  "vendor": "onetrust",
+  "selector": "#onetrust-banner-sdk",
+  "text": "By clicking 'Accept' you agree to the use of Cookies, which we use to give you the best online experience. For more information please visit our Privacy Policy. Cookie Settings Required cookies only Accept",
+  "controls": [
+   {
+    "i": 0,
+    "role": "link",
+    "label": "Privacy Policy"
+   },
+   {
+    "i": 1,
+    "role": "button",
+    "label": "Cookie Settings, Opens the preference center dialog",
+    "id": "onetrust-pc-btn-handler"
+   },
+   {
+    "i": 2,
+    "role": "button",
+    "label": "Required cookies only",
+    "id": "onetrust-reject-all-handler"
+   },
+   {
+    "i": 3,
+    "role": "button",
+    "label": "Accept",
+    "id": "onetrust-accept-btn-handler"
+   }
+  ]
+ }
+}

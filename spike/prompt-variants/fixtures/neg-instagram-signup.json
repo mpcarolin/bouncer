@@ -1,0 +1,47 @@
+{
+ "id": "neg-instagram-signup",
+ "kind": "negative",
+ "category": "login-wall",
+ "stage": 1,
+ "round": 2,
+ "note": "Sign-up nag modal.",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "other"
+ },
+ "expected": [
+  {
+   "action": "not_consent"
+  }
+ ],
+ "detectorPicked": false,
+ "fullText": "See photos, videos and more from nasa Sign up and never miss a post from nasa. Sign up Log in",
+ "banner": {
+  "url": "https://www.instagram.com/nasa/",
+  "vendor": "manual",
+  "selector": "div.x1ja2u2z.x1afcbsf",
+  "text": "See photos, videos and more from nasa Sign up and never miss a post from nasa. Sign up Log in",
+  "controls": [
+   {
+    "i": 0,
+    "role": "button",
+    "label": "Close"
+   },
+   {
+    "i": 1,
+    "role": "link",
+    "label": "nasa's profile picture"
+   },
+   {
+    "i": 2,
+    "role": "button",
+    "label": "Sign up"
+   },
+   {
+    "i": 3,
+    "role": "button",
+    "label": "Log in"
+   }
+  ]
+ }
+}

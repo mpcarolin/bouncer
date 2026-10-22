@@ -1,0 +1,59 @@
+{
+ "id": "nvidia",
+ "kind": "positive",
+ "category": "consent-banner",
+ "stage": 1,
+ "round": 1,
+ "note": "OneTrust, reject present (Manage Settings / Reject Optional / Accept All). Required fixture.",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "consent"
+ },
+ "expected": [
+  {
+   "action": "reject",
+   "index": 4
+  }
+ ],
+ "banner": {
+  "url": "https://docs.nvidia.com/openshell/home",
+  "vendor": "onetrust",
+  "selector": "#onetrust-banner-sdk",
+  "text": "NVIDIA uses cookies to improve your experience on our web site. We and our third-party partners also use cookies and other tools to collect and record information you provide as well as information about your interactions with our websites for performance improvement, analytics, and to assist in marketing efforts. By clicking \"Accept All\", you consent to our use of cookies and other tools as described in our Cookie Policy. You can manage your cookie settings by clicking on \"Manage Settings.\" By continuing to use this site or by clicking one of the buttons below, you agree to our Terms of Service (which contains important waivers). Please see our Privacy Policy for more information on our pr…",
+  "controls": [
+   {
+    "i": 0,
+    "role": "link",
+    "label": "Cookie Policy"
+   },
+   {
+    "i": 1,
+    "role": "link",
+    "label": "Terms of Service"
+   },
+   {
+    "i": 2,
+    "role": "link",
+    "label": "Privacy Policy"
+   },
+   {
+    "i": 3,
+    "role": "button",
+    "label": "Manage Settings, Opens the preference center dialog",
+    "id": "onetrust-pc-btn-handler"
+   },
+   {
+    "i": 4,
+    "role": "button",
+    "label": "Reject Optional",
+    "id": "onetrust-reject-all-handler"
+   },
+   {
+    "i": 5,
+    "role": "button",
+    "label": "Accept All",
+    "id": "onetrust-accept-btn-handler"
+   }
+  ]
+ }
+}

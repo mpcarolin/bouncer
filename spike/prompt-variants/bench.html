@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Prompt variants bench</title>
+<style>
+  body { font: 13px/1.45 system-ui, sans-serif; margin: 16px; }
+  fieldset { margin: 0 0 10px; }
+  table { border-collapse: collapse; font-size: 12px; }
+  td, th { border-bottom: 1px solid #ddd; padding: 2px 6px; text-align: right; white-space: nowrap; }
+  td.l, th.l { text-align: left; }
+  th { background: #f4f4f4; position: sticky; top: 0; }
+  .bad { color: #b00; } .good { color: #070; } .dim { color: #888; }
+  pre { background: #f6f6f6; padding: 8px; max-height: 240px; overflow: auto; font-size: 11px; }
+  .grp label { display: inline-block; margin-right: 12px; }
+  .matrix td { font-family: ui-monospace, monospace; font-size: 11px; }
+</style>
+</head>
+<body>
+  <h2>Cookie-banner prompt variants: side-by-side bench</h2>
+  <div id="status">checking model…</div>
+
+  <fieldset>
+    <legend>Variants</legend>
+    <div id="variants"></div>
+  </fieldset>
+  <fieldset>
+    <legend>Fixtures <button id="fxAll">all</button> <button id="fxPos">positives</button> <button id="fxNeg">negatives</button> <button id="fxNone">none</button></legend>
+    <div id="fixtures" class="grp"></div>
+  </fieldset>
+  <fieldset>
+    <legend>Run</legend>
+    <label>iterations <input id="iters" type="number" value="3" min="1" style="width:50px"></label>
+    <label title="topK=1 + temperature=0 (deprecated but honoured in extensions), or samplingMode most-predictable if exposed"><input id="greedy" type="checkbox"> greedy</label>
+    <label title="measureContextUsage on iteration 0 (time excluded from latency)"><input id="measure" type="checkbox" checked> measure input tokens</label>
+    <button id="run" disabled>Run</button>
+    <button id="stop" disabled>Stop</button>
+    <button id="copy" disabled>Copy results JSON</button>
+    <button id="save" disabled>Save results JSON</button>
+    <span id="estimate" class="dim"></span> <span id="progress"></span>
+    <textarea id="out" hidden readonly style="width:100%;height:100px;font-size:11px"></textarea>
+  </fieldset>
+
+  <h3>Comparison</h3>
+  <div id="summary">–</div>
+  <p class="dim">correct = runs matching the expected answer. Gate: FP = negative called consent, FN = consent called other (cnn is borderline=consent).
+    Hybrid/mechanical: FP = acted (anything but not_consent) on a negative; FN = consent fixture called not_consent.
+    ms = per-run latency (median / p90) excluding one-time base-session creation and token measurement. consistent = fixtures whose iterations all gave the same output.</p>
+
+  <h3>Per fixture (correct/n · most common output)</h3>
+  <div id="matrix">–</div>
+
+  <fieldset>
+    <legend>Cold start</legend>
+    Destroys this page's sessions, then waits without touching the model, then times availability() → create() → first prompt, then the same again warm.
+    <br><label>wait <input id="coldWait" type="number" value="60" min="0" style="width:60px"> s</label>
+    <label>in <select id="coldWhere"><option value="page">this page</option><option value="sw">service worker (lets it go idle first)</option></select></label>
+    <button id="cold">Measure cold start</button> <span id="coldStatus"></span>
+    <pre id="coldOut" hidden></pre>
+  </fieldset>
+
+  <h3>Log</h3>
+  <pre id="log"></pre>
+
+  <script type="module" src="bench.js"></script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+{
+ "id": "vestas",
+ "kind": "positive",
+ "category": "consent-banner",
+ "stage": 1,
+ "round": 1,
+ "note": "Cookie Information CMP; reject button carries role=\"alert\".",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "consent"
+ },
+ "expected": [
+  {
+   "action": "reject",
+   "index": 5
+  }
+ ],
+ "banner": {
+  "url": "https://www.vestas.com/en",
+  "vendor": "cookieinformation",
+  "selector": "#coiOverlay",
+  "text": "You are in control of your own data Vestas uses cookies on our websites for various purposes related to web functionalities, web analytics, and marketing. We use our own and third-party cookies to improve the usability of our website, store your preferences and analyse your browsing habits. At any time, you may update your cookie preferences by clicking on the cookie-settings icon at the bottom left corner of this website. You may also read more about our use of cookies and other technologies, as well as our collection and processing of personal data across Vestas domains by clicking on the following link: Cookie policy Strictly necessary Functional Statistical Marketing Reject all Accept a…",
+  "controls": [
+   {
+    "i": 0,
+    "role": "link",
+    "label": "Cookie policy"
+   },
+   {
+    "i": 1,
+    "role": "toggle",
+    "label": "Strictly necessary",
+    "on": true,
+    "disabled": true,
+    "id": "cookie_cat_necessary"
+   },
+   {
+    "i": 2,
+    "role": "toggle",
+    "label": "checkbox for Functional",
+    "on": false,
+    "id": "cookie_cat_functional"
+   },
+   {
+    "i": 3,
+    "role": "toggle",
+    "label": "checkbox for Statistical",
+    "on": false,
+    "id": "cookie_cat_statistic"
+   },
+   {
+    "i": 4,
+    "role": "toggle",
+    "label": "checkbox for Marketing",
+    "on": false,
+    "id": "cookie_cat_marketing"
+   },
+   {
+    "i": 5,
+    "role": "alert",
+    "label": "Reject all",
+    "id": "declineButton"
+   },
+   {
+    "i": 6,
+    "role": "button",
+    "label": "Accept all"
+   },
+   {
+    "i": 7,
+    "role": "button",
+    "label": "Show details",
+    "id": "show_details"
+   }
+  ]
+ }
+}

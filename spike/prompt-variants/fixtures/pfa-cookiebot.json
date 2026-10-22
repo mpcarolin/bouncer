@@ -1,0 +1,107 @@
+{
+ "id": "pfa-cookiebot",
+ "kind": "positive",
+ "category": "consent-banner",
+ "stage": 1,
+ "round": 1,
+ "note": "Cookiebot (pfa.dk, English UI), \"Deny\" = reject; toggles already off.",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "consent"
+ },
+ "expected": [
+  {
+   "action": "reject",
+   "index": 10
+  }
+ ],
+ "banner": {
+  "url": "https://www.pfa.dk/privat/",
+  "vendor": "cookiebot",
+  "selector": "#CybotCookiebotDialog",
+  "text": "Consent Details About This website uses cookies PFA uses cookies, including cookies from third parties. These cookies include: functional cookies that are used to optimize content, such as remembering your preferred language, statistical cookies that record how the website is used, and marketing cookies that are used to target ads. You consent to this by clicking \"Allow all\". If you want to change your consent, you can click on \"Manage consent\". If you later regret your choice, you can always go to \"Manage cookie consent\" at the bottom of the page and make a change. Read more about our use of cookies and processing of personal data. Consent Selection Necessary Preferences Statistics Marketi…",
+  "controls": [
+   {
+    "i": 0,
+    "role": "link",
+    "label": "Cookiebot by Usercentrics - opens in a new window",
+    "id": "CybotCookiebotDialogPoweredbyCybot"
+   },
+   {
+    "i": 1,
+    "role": "tab",
+    "label": "Consent",
+    "id": "CybotCookiebotDialogNavDeclaration"
+   },
+   {
+    "i": 2,
+    "role": "tab",
+    "label": "Details",
+    "id": "CybotCookiebotDialogNavDetails"
+   },
+   {
+    "i": 3,
+    "role": "tab",
+    "label": "About",
+    "id": "CybotCookiebotDialogNavAbout"
+   },
+   {
+    "i": 4,
+    "role": "link",
+    "label": "use of cookies"
+   },
+   {
+    "i": 5,
+    "role": "link",
+    "label": "processing of personal data"
+   },
+   {
+    "i": 6,
+    "role": "toggle",
+    "label": "Necessary",
+    "on": true,
+    "disabled": true,
+    "id": "CybotCookiebotDialogBodyLevelButtonNecessary"
+   },
+   {
+    "i": 7,
+    "role": "toggle",
+    "label": "Preferences",
+    "on": false,
+    "id": "CybotCookiebotDialogBodyLevelButtonPreferences"
+   },
+   {
+    "i": 8,
+    "role": "toggle",
+    "label": "Statistics",
+    "on": false,
+    "id": "CybotCookiebotDialogBodyLevelButtonStatistics"
+   },
+   {
+    "i": 9,
+    "role": "toggle",
+    "label": "Marketing",
+    "on": false,
+    "id": "CybotCookiebotDialogBodyLevelButtonMarketing"
+   },
+   {
+    "i": 10,
+    "role": "button",
+    "label": "Deny",
+    "id": "CybotCookiebotDialogBodyButtonDecline"
+   },
+   {
+    "i": 11,
+    "role": "button",
+    "label": "Allow selection",
+    "id": "CybotCookiebotDialogBodyLevelButtonLevelOptinAllowallSelection"
+   },
+   {
+    "i": 12,
+    "role": "button",
+    "label": "Allow all",
+    "id": "CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll"
+   }
+  ]
+ }
+}

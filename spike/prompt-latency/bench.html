@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Prompt API latency bench</title>
+<style>
+  body { font: 13px/1.45 system-ui, sans-serif; margin: 16px; max-width: 1200px; }
+  fieldset { margin: 0 0 10px; }
+  table { border-collapse: collapse; font-size: 12px; }
+  td, th { border-bottom: 1px solid #ddd; padding: 2px 6px; text-align: right; }
+  td:first-child, th:first-child, td.l { text-align: left; }
+  th { background: #f4f4f4; position: sticky; top: 0; }
+  .bad { color: #b00; }
+  .good { color: #070; }
+  pre { background: #f6f6f6; padding: 8px; max-height: 260px; overflow: auto; font-size: 11px; }
+  #fixtures label { display: inline-block; margin-right: 10px; }
+  progress { width: 300px; }
+</style>
+</head>
+<body>
+  <h2>Prompt API (Gemini Nano) cookie-banner latency bench</h2>
+
+  <fieldset>
+    <legend>Model status</legend>
+    <div id="status">checking…</div>
+    <div id="dl" hidden>
+      <button id="download">Download model (needs this click)</button>
+      <progress id="dlprog" max="1" value="0"></progress> <span id="dltext"></span>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Config</legend>
+    <label>iterations <input id="iters" type="number" value="5" min="1" style="width:50px"></label>
+    &nbsp; <label>run in
+      <select id="where"><option value="page">this extension page</option><option value="sw">service worker</option></select></label>
+    &nbsp; <label>banner text chars <input id="maxText" type="number" value="400" min="0" step="50" style="width:60px"></label>
+    &nbsp; <label title="Extension-only legacy params topK=1, temperature=0"><input id="greedy" type="checkbox"> greedy (topK=1)</label>
+    <br>strategy:
+    <label><input type="checkbox" name="strategy" value="clone" checked> clone() primed base</label>
+    <label><input type="checkbox" name="strategy" value="fresh" checked> fresh create() each time</label>
+    <br>output:
+    <label><input type="checkbox" name="constraint" value="schema" checked> responseConstraint (JSON schema)</label>
+    <label><input type="checkbox" name="constraint" value="schema-omit" checked> schema + omitResponseConstraintInput</label>
+    <label><input type="checkbox" name="constraint" value="none" checked> no constraint (parse text)</label>
+    <div id="fixtures">fixtures: </div>
+  </fieldset>
+
+  <button id="run" disabled>Run benchmark</button>
+  <button id="copy" disabled>Copy results as JSON</button>
+  <button id="save" disabled>Save results as .json</button>
+  <span id="progress"></span>
+
+  <textarea id="out" hidden readonly style="width:100%;height:120px;font-size:11px"></textarea>
+
+  <h3>Session timings (ms)</h3>
+  <div id="sessions">–</div>
+
+  <h3>Per case (ms; decision = setup + prompt, excluding token measurement)</h3>
+  <div id="summary">–</div>
+
+  <h3>By strategy × output (all selected fixtures pooled)</h3>
+  <div id="overall">–</div>
+
+  <h3>Log</h3>
+  <pre id="log"></pre>
+
+  <h3>System prompt</h3>
+  <pre id="sys"></pre>
+
+  <script src="engine.js"></script>
+  <script src="bench.js"></script>
+</body>
+</html>

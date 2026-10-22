@@ -1,0 +1,39 @@
+{
+ "id": "drift-ketch",
+ "kind": "positive",
+ "category": "consent-banner",
+ "stage": 1,
+ "round": 2,
+ "note": "Ketch (drift.com, generic detector): only \"close banner\" X and \"Open Preferences\". Judgement: closing a US notice banner is implied consent, so settings.",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "consent"
+ },
+ "expected": [
+  {
+   "action": "settings",
+   "index": 1
+  }
+ ],
+ "detectorPicked": true,
+ "fullText": "Your Privacy Choices We use cookies and other tracking technologies to improve user experience, distinguish you from other users, personalize advertisements, analyze website traffic, and for security purposes. You can change your cookie settings at any time by clicking “Open Preferences.” Open Preferences",
+ "banner": {
+  "url": "https://www.salesloft.com/platform/chat-agents",
+  "vendor": "generic",
+  "selector": "#ketch-banner",
+  "text": "Your Privacy Choices We use cookies and other tracking technologies to improve user experience, distinguish you from other users, personalize advertisements, analyze website traffic, and for security purposes. You can change your cookie settings at any time by clicking “Open Preferences.” Open Preferences",
+  "controls": [
+   {
+    "i": 0,
+    "role": "button",
+    "label": "close banner"
+   },
+   {
+    "i": 1,
+    "role": "button",
+    "label": "Open Preferences",
+    "id": "ketch-banner-button-primary"
+   }
+  ]
+ }
+}

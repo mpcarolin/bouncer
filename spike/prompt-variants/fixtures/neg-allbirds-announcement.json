@@ -1,0 +1,37 @@
+{
+ "id": "neg-allbirds-announcement",
+ "kind": "negative",
+ "category": "announcement-bar",
+ "stage": 1,
+ "round": 2,
+ "note": "Shipping announcement bar with unlabeled carousel buttons.",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "other"
+ },
+ "expected": [
+  {
+   "action": "not_consent"
+  }
+ ],
+ "detectorPicked": false,
+ "fullText": "Due to increased demand, orders may take up to 30 days to ship. Free ground shipping on orders over $100",
+ "banner": {
+  "url": "https://www.allbirds.com/",
+  "vendor": "manual",
+  "selector": "[id$=__global-banner]",
+  "text": "Due to increased demand, orders may take up to 30 days to ship. Free ground shipping on orders over $100",
+  "controls": [
+   {
+    "i": 0,
+    "role": "button",
+    "label": ""
+   },
+   {
+    "i": 1,
+    "role": "button",
+    "label": ""
+   }
+  ]
+ }
+}

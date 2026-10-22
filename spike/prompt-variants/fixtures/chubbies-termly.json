@@ -1,0 +1,57 @@
+{
+ "id": "chubbies-termly",
+ "kind": "positive",
+ "category": "consent-banner",
+ "stage": 1,
+ "round": 2,
+ "note": "Termly, NO reject: two \"Preferences\" buttons + ACCEPT -> open settings.",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "consent"
+ },
+ "expected": [
+  {
+   "action": "settings",
+   "index": 2
+  },
+  {
+   "action": "settings",
+   "index": 3
+  }
+ ],
+ "detectorPicked": true,
+ "fullText": "We use essential cookies to make our site work. With your consent, we may also use non-essential cookies to improve user experience, personalize content, and analyze website traffic. For these reasons, we may share your site usage data with our analytics partners. By clicking “Accept,” you agree to our website's cookie use as described in our Cookie Policy and Privacy Policy. You can change your cookie settings at any time by clicking “Preferences.” PREFERENCES ACCEPT",
+ "banner": {
+  "url": "https://www.chubbiesshorts.com/",
+  "vendor": "generic",
+  "selector": "div.termly-styles-root-b0aebb.termly-styles-termly-stretch-c62824",
+  "text": "We use essential cookies to make our site work. With your consent, we may also use non-essential cookies to improve user experience, personalize content, and analyze website traffic. For these reasons, we may share your site usage data with our analytics partners. By clicking “Accept,” you agree to our website's cookie use as described in our Cookie Policy and Privacy Policy. You can change your cookie settings at any time by clicking “Preferences.” PREFERENCES ACCEPT",
+  "controls": [
+   {
+    "i": 0,
+    "role": "button",
+    "label": "Cookie Policy"
+   },
+   {
+    "i": 1,
+    "role": "button",
+    "label": "Privacy Policy"
+   },
+   {
+    "i": 2,
+    "role": "button",
+    "label": "Preferences"
+   },
+   {
+    "i": 3,
+    "role": "button",
+    "label": "PREFERENCES"
+   },
+   {
+    "i": 4,
+    "role": "button",
+    "label": "ACCEPT"
+   }
+  ]
+ }
+}

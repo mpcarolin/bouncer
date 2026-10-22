@@ -1,0 +1,73 @@
+{
+ "id": "neg-pinterest-login",
+ "kind": "negative",
+ "category": "login-wall",
+ "stage": 1,
+ "round": 2,
+ "note": "Login modal; generic detector DOES pick it (mentions Privacy Policy). Has a \"Show password\" checkbox that serialises as a toggle.",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "other"
+ },
+ "expected": [
+  {
+   "action": "not_consent"
+  }
+ ],
+ "detectorPicked": true,
+ "fullText": "Welcome to Pinterest Log in to discover more ideas just for you Email Password Forgot password? Log in OR Continue with Google Continue with QR code New to Pinterest? Join for free Terms of Service · Privacy Policy · Notice at Collection",
+ "banner": {
+  "url": "https://www.pinterest.com/ideas/",
+  "vendor": "generic",
+  "selector": "div",
+  "text": "Welcome to Pinterest Log in to discover more ideas just for you Email Password Forgot password? Log in OR Continue with Google Continue with QR code New to Pinterest? Join for free Terms of Service · Privacy Policy · Notice at Collection",
+  "controls": [
+   {
+    "i": 0,
+    "role": "toggle",
+    "label": "Show password",
+    "on": false
+   },
+   {
+    "i": 1,
+    "role": "link",
+    "label": "Forgot password?"
+   },
+   {
+    "i": 2,
+    "role": "button",
+    "label": "Log in"
+   },
+   {
+    "i": 3,
+    "role": "button",
+    "label": "Continue with Google"
+   },
+   {
+    "i": 4,
+    "role": "button",
+    "label": "QR code login button"
+   },
+   {
+    "i": 5,
+    "role": "link",
+    "label": "Join for free"
+   },
+   {
+    "i": 6,
+    "role": "link",
+    "label": "Terms of Service"
+   },
+   {
+    "i": 7,
+    "role": "link",
+    "label": "Privacy Policy"
+   },
+   {
+    "i": 8,
+    "role": "link",
+    "label": "Notice at Collection"
+   }
+  ]
+ }
+}

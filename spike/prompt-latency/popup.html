@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 12px/1.4 system-ui, sans-serif; width: 560px; margin: 8px; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { border-bottom: 1px solid #ddd; padding: 2px 4px; text-align: left; vertical-align: top; }
+  th { background: #f4f4f4; }
+  .err { color: #b00; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+  code { font-size: 11px; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <label><input type="checkbox" id="liveEnabled"> live mode</label>
+    <label>model runs in
+      <select id="liveEngine"><option value="sw">service worker</option><option value="content">content script</option></select></label>
+    <label>output
+      <select id="constraint"><option value="schema">JSON schema</option><option value="schema-omit">schema, omit input</option><option value="none">no constraint</option></select></label>
+    <label>text chars <input id="maxText" type="number" min="0" step="50" style="width:55px"></label>
+  </div>
+  <div class="row">
+    <button id="bench">Open bench</button>
+    <button id="copy">Copy live results as JSON</button>
+    <button id="clear">Clear</button>
+    <span id="msg"></span>
+  </div>
+  <div style="color:#666">Times in ms. "banner→decision" = model latency a human-reader comparison should use. Reload a page after changing settings.</div>
+  <table>
+    <thead><tr><th>page</th><th>vendor</th><th>found@</th><th>banner→decision</th><th>model (setup/ttft/prompt)</th><th>decision</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <script src="popup.js"></script>
+</body>
+</html>

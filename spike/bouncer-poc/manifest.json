@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Bouncer POC (cookie banners)",
+  "version": "0.3",
+  "description": "Throwaway spike: dismisses cookie banners with the least-data choice. Known CMPs via @duckduckgo/autoconsent rules; unknown banners via heuristics + Gemini Nano gate.",
+  "minimum_chrome_version": "138",
+  "permissions": ["storage", "scripting", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_popup": "popup.html", "default_title": "Bouncer POC" },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["node_modules/@duckduckgo/autoconsent/dist/addon-mv3/content.bundle.js"],
+      "match_origin_as_fallback": true,
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["detect.js", "bouncer.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ]
+}

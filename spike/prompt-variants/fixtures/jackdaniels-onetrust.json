@@ -1,0 +1,56 @@
+{
+ "id": "jackdaniels-onetrust",
+ "kind": "positive",
+ "category": "consent-banner",
+ "stage": 1,
+ "round": 2,
+ "note": "OneTrust with Reject All and a Close X.",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "consent"
+ },
+ "expected": [
+  {
+   "action": "reject",
+   "index": 2
+  }
+ ],
+ "detectorPicked": true,
+ "fullText": "By clicking “Accept All Cookies”, you agree to the storing of cookies on your device to enhance site navigation, analyze site usage, and assist in our marketing efforts. Cookie Policy Manage Consent Preferences Reject All Accept All Cookies",
+ "banner": {
+  "url": "https://www.jackdaniels.com/en-us",
+  "vendor": "manual",
+  "selector": "#onetrust-banner-sdk",
+  "text": "By clicking “Accept All Cookies”, you agree to the storing of cookies on your device to enhance site navigation, analyze site usage, and assist in our marketing efforts. Cookie Policy Manage Consent Preferences Reject All Accept All Cookies",
+  "controls": [
+   {
+    "i": 0,
+    "role": "link",
+    "label": "More information about your privacy, opens in a new tab"
+   },
+   {
+    "i": 1,
+    "role": "button",
+    "label": "Manage Consent Preferences, Opens the preference center dia…",
+    "id": "onetrust-pc-btn-handler"
+   },
+   {
+    "i": 2,
+    "role": "button",
+    "label": "Reject All",
+    "id": "onetrust-reject-all-handler"
+   },
+   {
+    "i": 3,
+    "role": "button",
+    "label": "Accept All Cookies",
+    "id": "onetrust-accept-btn-handler"
+   },
+   {
+    "i": 4,
+    "role": "button",
+    "label": "Close"
+   }
+  ]
+ }
+}

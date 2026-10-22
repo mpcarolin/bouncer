@@ -1,0 +1,32 @@
+{
+ "id": "neg-brooklinen-promo",
+ "kind": "negative",
+ "category": "promo",
+ "stage": 1,
+ "round": 2,
+ "note": "Promo/discount offer-terms modal.",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "other"
+ },
+ "expected": [
+  {
+   "action": "not_consent"
+  }
+ ],
+ "detectorPicked": false,
+ "fullText": "Offer Terms 20% off sitewide and storewide applied at checkout using code FRIENDSANDFAM. Select bundles qualify for 50% total savings, inclusive of the 20% sitewide and storewide discount. Offer expires 10:00 AM EST on 10/27/26. Valid online and in store. While supplies last. Excludes Essential Sheet Sets & Spaces by Brooklinen brands. 50% total savings reflects the difference between the final promotional bundle price and the combined regular prices of the bundled items when purchased separately, inclusive of the 20% promotional discount. The following bundles qualify for 50% total savings: Dreamweave Waffle Bath Towel Bundle & Woven Checkerboard Duvet Set. Offer cannot be combined with other Brooklinen offers or coupons (except Brooklinen Rewards redemptions) or used on previous purchases or the purchase of gift cards. Brooklinen reserves the right to modify, replace, or cancel the offer at any time. Free ground shipping within the contiguous U.S. (i.e, excluding AK, HI, PR) on all orders.",
+ "banner": {
+  "url": "https://www.brooklinen.com/",
+  "vendor": "manual",
+  "selector": "div.overlay__modal",
+  "text": "Offer Terms 20% off sitewide and storewide applied at checkout using code FRIENDSANDFAM. Select bundles qualify for 50% total savings, inclusive of the 20% sitewide and storewide discount. Offer expires 10:00 AM EST on 10/27/26. Valid online and in store. While supplies last. Excludes Essential Sheet Sets & Spaces by Brooklinen brands. 50% total savings reflects the difference between the final promotional bundle price and the combined regular prices of the bundled items when purchased separately, inclusive of the 20% promotional discount. The following bundles qualify for 50% total savings: Dreamweave Waffle Bath Towel Bundle & Woven Checkerboard Duvet Set. Offer cannot be combined with ot…",
+  "controls": [
+   {
+    "i": 0,
+    "role": "button",
+    "label": ""
+   }
+  ]
+ }
+}

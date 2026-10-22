@@ -1,0 +1,53 @@
+{
+ "id": "ikea",
+ "kind": "positive",
+ "category": "consent-banner",
+ "stage": 1,
+ "round": 1,
+ "note": "OneTrust configured with NO reject: only \"Ok\" + \"Your privacy choices\" -> must open settings.",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "consent"
+ },
+ "expected": [
+  {
+   "action": "settings",
+   "index": 3
+  }
+ ],
+ "banner": {
+  "url": "https://www.ikea.com/us/en/",
+  "vendor": "onetrust",
+  "selector": "#onetrust-banner-sdk",
+  "text": "IKEA US and our digital partners use cookies on this site. Some are strictly necessary to run the site and others are used for measuring site usage, enabling personalization and for advertising, marketing, and social media. View our Privacy Policy, California Notice at Collection, and Cookie Policy for more information. Your privacy choices Ok",
+  "controls": [
+   {
+    "i": 0,
+    "role": "link",
+    "label": "Privacy Policy"
+   },
+   {
+    "i": 1,
+    "role": "link",
+    "label": "California Notice at Collection"
+   },
+   {
+    "i": 2,
+    "role": "link",
+    "label": "Cookie Policy"
+   },
+   {
+    "i": 3,
+    "role": "button",
+    "label": "Your privacy choices, Opens the preference center dialog",
+    "id": "onetrust-pc-btn-handler"
+   },
+   {
+    "i": 4,
+    "role": "button",
+    "label": "Ok",
+    "id": "onetrust-accept-btn-handler"
+   }
+  ]
+ }
+}

@@ -1,0 +1,119 @@
+{
+ "id": "neg-jackdaniels-agegate",
+ "kind": "negative",
+ "category": "age-gate",
+ "stage": 1,
+ "round": 2,
+ "note": "Age gate (birthdate + country); links to privacy/cookie policy.",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "other"
+ },
+ "expected": [
+  {
+   "action": "not_consent"
+  }
+ ],
+ "detectorPicked": false,
+ "fullText": "Jack Daniel's. Live Freely. Drink Responsibly. USA JACK'S BIRTHDATE HAS ALWAYS BEEN A MYSTERY. HOPEFULLY YOURS ISN'T. terms of use privacy policy ENTER EMBRACE THE MOMENT. ENJOY RESPONSIBLY. Terms of Use Privacy Policy Cookie Policy US Product Info Sustainability Contact Us FAQs Nutrition Pressroom Accessibility Jack Daniel Distillery, Lynchburg, Tennessee JACK, JACK DANIEL'S, OLD NO. 7, JD, GENTLEMAN JACK, JACK HONEY, JACK FIRE, and COUNTRY COCKTAILS are registered trademarks of Jack Daniel's Properties, Inc. ©2026. All rights reserved. Please do not share or forward with anyone under the legal drinking age. Do Not Sell or Share My Data Responsibility.org Our Thinking About Drinking All other trademarks and trade names are properties of their respective owners. Please do not share or forward with anyone under the legal drinking age. Products depicted, including proof and package, may vary by country or market. Tennessee Whiskey, 40-45% alc.by vol. (80-94 proof), Distilled and Bottled by Jack Daniel Distillery, Lynchburg, Tennessee.",
+ "banner": {
+  "url": "https://www.jackdaniels.com/en-us",
+  "vendor": "manual",
+  "selector": "[data-spike=agegate]",
+  "text": "Jack Daniel's. Live Freely. Drink Responsibly. USA JACK'S BIRTHDATE HAS ALWAYS BEEN A MYSTERY. HOPEFULLY YOURS ISN'T. terms of use privacy policy ENTER EMBRACE THE MOMENT. ENJOY RESPONSIBLY. Terms of Use Privacy Policy Cookie Policy US Product Info Sustainability Contact Us FAQs Nutrition Pressroom Accessibility Jack Daniel Distillery, Lynchburg, Tennessee JACK, JACK DANIEL'S, OLD NO. 7, JD, GENTLEMAN JACK, JACK HONEY, JACK FIRE, and COUNTRY COCKTAILS are registered trademarks of Jack Daniel's Properties, Inc. ©2026. All rights reserved. Please do not share or forward with anyone under the legal drinking age. Do Not Sell or Share My Data Responsibility.org Our Thinking About Drinking All ot…",
+  "controls": [
+   {
+    "i": 0,
+    "role": "button",
+    "label": "Country",
+    "id": "react-aria55832906-:r3:"
+   },
+   {
+    "i": 1,
+    "role": "select",
+    "label": "AFGHANISTAN ALBANIA ALGERIA ANDORRA ANGOLA ANGUILLA ANTIGUA…"
+   },
+   {
+    "i": 2,
+    "role": "link",
+    "label": "terms of use"
+   },
+   {
+    "i": 3,
+    "role": "link",
+    "label": "privacy policy"
+   },
+   {
+    "i": 4,
+    "role": "button",
+    "label": "ENTER",
+    "id": "react-aria55832906-:ru:"
+   },
+   {
+    "i": 5,
+    "role": "link",
+    "label": "Terms of Use"
+   },
+   {
+    "i": 6,
+    "role": "link",
+    "label": "Privacy Policy"
+   },
+   {
+    "i": 7,
+    "role": "link",
+    "label": "Cookie Policy"
+   },
+   {
+    "i": 8,
+    "role": "link",
+    "label": "US Product Info"
+   },
+   {
+    "i": 9,
+    "role": "link",
+    "label": "Sustainability"
+   },
+   {
+    "i": 10,
+    "role": "link",
+    "label": "Contact Us"
+   },
+   {
+    "i": 11,
+    "role": "link",
+    "label": "FAQs"
+   },
+   {
+    "i": 12,
+    "role": "link",
+    "label": "Nutrition"
+   },
+   {
+    "i": 13,
+    "role": "link",
+    "label": "Pressroom"
+   },
+   {
+    "i": 14,
+    "role": "link",
+    "label": "Accessibility"
+   },
+   {
+    "i": 15,
+    "role": "link",
+    "label": "Do Not Sell or Share My Data"
+   },
+   {
+    "i": 16,
+    "role": "link",
+    "label": "Responsibility.org"
+   },
+   {
+    "i": 17,
+    "role": "link",
+    "label": "Our Thinking About Drinking"
+   }
+  ]
+ }
+}

@@ -1,0 +1,39 @@
+{
+ "id": "cnn",
+ "stage": 1,
+ "note": "Trap: terms/privacy \"Agree\"-only dialog, no reject, no settings. Least-invasive = do nothing.",
+ "capturedAt": "2026-10-22",
+ "expected": [
+  {
+   "action": "none"
+  }
+ ],
+ "banner": {
+  "url": "https://www.cnn.com/",
+  "vendor": "generic",
+  "selector": "div",
+  "text": "Legal Terms and Privacy By clicking \"Agree\", you agree to the Terms of Use and to the collection and use of your information by cookies and similar technologies, as set forth in our Privacy Policy. Accepting does not impact privacy choices you may have under state laws. Learn more in our US State Supplement. Agree",
+  "controls": [
+   {
+    "i": 0,
+    "role": "link",
+    "label": "Terms of Use"
+   },
+   {
+    "i": 1,
+    "role": "link",
+    "label": "Privacy Policy"
+   },
+   {
+    "i": 2,
+    "role": "link",
+    "label": "US State Supplement"
+   },
+   {
+    "i": 3,
+    "role": "button",
+    "label": "Agree"
+   }
+  ]
+ }
+}

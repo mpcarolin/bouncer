@@ -1,0 +1,48 @@
+{
+ "id": "stackoverflow",
+ "kind": "positive",
+ "category": "consent-banner",
+ "stage": 1,
+ "round": 1,
+ "note": "OneTrust, reject labelled \"Necessary cookies only\"; has an ambiguous \"Close\".",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "consent"
+ },
+ "expected": [
+  {
+   "action": "reject",
+   "index": 1
+  }
+ ],
+ "banner": {
+  "url": "https://stackoverflow.com/questions",
+  "vendor": "onetrust",
+  "selector": "#onetrust-banner-sdk",
+  "text": "By continuing to use this website, you agree Stack Exchange can store cookies on your device and disclose information in accordance with our Cookie Policy. By exiting this window, default cookies will be accepted. To reject cookies, select an option from below. Necessary cookies only Customize settings",
+  "controls": [
+   {
+    "i": 0,
+    "role": "link",
+    "label": "Cookie Policy"
+   },
+   {
+    "i": 1,
+    "role": "button",
+    "label": "Necessary cookies only",
+    "id": "onetrust-reject-all-handler"
+   },
+   {
+    "i": 2,
+    "role": "button",
+    "label": "Customize settings, Opens the preference center dialog",
+    "id": "onetrust-pc-btn-handler"
+   },
+   {
+    "i": 3,
+    "role": "button",
+    "label": "Close"
+   }
+  ]
+ }
+}

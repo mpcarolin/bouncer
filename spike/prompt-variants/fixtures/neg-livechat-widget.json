@@ -1,0 +1,48 @@
+{
+ "id": "neg-livechat-widget",
+ "kind": "negative",
+ "category": "chat-widget",
+ "stage": 1,
+ "round": 2,
+ "note": "LiveChat widget greeting (same-origin iframe).",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "other"
+ },
+ "expected": [
+  {
+   "action": "not_consent"
+  }
+ ],
+ "detectorPicked": false,
+ "fullText": "Text AI Support Hello! Still having questions? Chat with us, we're here 24/7! Free trial Let's Text!",
+ "banner": {
+  "url": "https://www.livechat.com/",
+  "vendor": "manual",
+  "selector": "#chat-widget-minimized",
+  "text": "Text AI Support Hello! Still having questions? Chat with us, we're here 24/7! Free trial Let's Text!",
+  "controls": [
+   {
+    "i": 0,
+    "role": "button",
+    "label": "Hide greeting"
+   },
+   {
+    "i": 1,
+    "role": "button",
+    "label": "Free trial"
+   },
+   {
+    "i": 2,
+    "role": "button",
+    "label": "Let's Text!"
+   },
+   {
+    "i": 3,
+    "role": "button",
+    "label": "Send a message"
+   }
+  ],
+  "frame": "about:srcdoc"
+ }
+}

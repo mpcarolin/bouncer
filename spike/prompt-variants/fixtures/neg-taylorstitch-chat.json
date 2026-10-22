@@ -1,0 +1,34 @@
+{
+ "id": "neg-taylorstitch-chat",
+ "kind": "negative",
+ "category": "chat-widget",
+ "stage": 1,
+ "round": 2,
+ "note": "Chat launcher button only, no text (same-origin iframe).",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "other"
+ },
+ "expected": [
+  {
+   "action": "not_consent"
+  }
+ ],
+ "detectorPicked": false,
+ "fullText": "",
+ "banner": {
+  "url": "https://www.taylorstitch.com/",
+  "vendor": "manual",
+  "selector": "#chat-button",
+  "text": "",
+  "controls": [
+   {
+    "i": 0,
+    "role": "button",
+    "label": "Chat with us",
+    "id": "gorgias-chat-messenger-button"
+   }
+  ],
+  "frame": "about:srcdoc"
+ }
+}

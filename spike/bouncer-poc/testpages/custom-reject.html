@@ -1,0 +1,7 @@
+<!doctype html><html><head><meta charset="utf-8"><title>custom banner: reject</title><link rel="stylesheet" href="style.css"></head>
+<body><main><h1>Home-grown banner with a reject button</h1><p>Expected: heuristic fast path clicks "Reject all", no model.</p></main>
+<div id="status">consent: unset</div>
+<div class="banner" id="my-cookie-notice">We use cookies and similar technologies to analyse traffic and personalise ads. You can accept all or reject optional cookies.
+  <button onclick="decide('accepted')">Accept all</button> <button onclick="decide('rejected')">Reject all</button></div>
+<script>function decide(v){ document.getElementById('status').textContent='consent: '+v; document.getElementById('my-cookie-notice').remove(); }</script>
+</body></html>

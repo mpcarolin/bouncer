@@ -1,0 +1,113 @@
+{
+ "id": "nvidia-settings",
+ "kind": "positive",
+ "category": "consent-settings-panel",
+ "stage": 2,
+ "round": 1,
+ "note": "Stage 2: NVIDIA OneTrust preference centre after \"Manage Settings\". Toggles already off (US); has Decline All.",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "consent"
+ },
+ "expected": [
+  {
+   "action": "reject",
+   "index": 12
+  },
+  {
+   "action": "save",
+   "index": 13,
+   "off": []
+  }
+ ],
+ "banner": {
+  "url": "https://docs.nvidia.com/openshell/home",
+  "vendor": "manual",
+  "selector": "#onetrust-pc-sdk",
+  "text": "Cookie Settings We and our third-party partners (including social media, advertising, and analytics partners) use cookies and other tracking technologies to collect, store, monitor, and process certain information about you when you visit our website. The information collected might relate to you, your preferences, or your device. We use that information to make the site work, analyze performance and traffic on our website, provide a more personalized web experience, and assist in our marketing efforts. Under certain privacy laws, you have the right to direct us not to \"sell\" or \"share\" your personal information for targeted advertising. To opt-out of the \"sale\" and \"sharing\" of personal in…",
+  "controls": [
+   {
+    "i": 0,
+    "role": "button",
+    "label": "Close preference center",
+    "id": "close-pc-btn-handler"
+   },
+   {
+    "i": 1,
+    "role": "link",
+    "label": "NVIDIA Preference Center"
+   },
+   {
+    "i": 2,
+    "role": "link",
+    "label": "Cookie Policy"
+   },
+   {
+    "i": 3,
+    "role": "link",
+    "label": "Terms of Service"
+   },
+   {
+    "i": 4,
+    "role": "link",
+    "label": "Privacy Policy"
+   },
+   {
+    "i": 5,
+    "role": "button",
+    "label": "Required Cookies Always Active"
+   },
+   {
+    "i": 6,
+    "role": "button",
+    "label": "Performance Cookies"
+   },
+   {
+    "i": 7,
+    "role": "toggle",
+    "label": "Performance Cookies",
+    "on": false,
+    "id": "ot-group-id-C0002"
+   },
+   {
+    "i": 8,
+    "role": "button",
+    "label": "Personalization Cookies"
+   },
+   {
+    "i": 9,
+    "role": "toggle",
+    "label": "Personalization Cookies",
+    "on": false,
+    "id": "ot-group-id-C0003"
+   },
+   {
+    "i": 10,
+    "role": "button",
+    "label": "Advertising Cookies"
+   },
+   {
+    "i": 11,
+    "role": "toggle",
+    "label": "Advertising Cookies",
+    "on": false,
+    "id": "ot-group-id-C0004"
+   },
+   {
+    "i": 12,
+    "role": "button",
+    "label": "Decline All"
+   },
+   {
+    "i": 13,
+    "role": "button",
+    "label": "Save and Accept"
+   },
+   {
+    "i": 14,
+    "role": "link",
+    "label": "Powered by OneTrust Opens in a new Tab"
+   }
+  ]
+ }
+}

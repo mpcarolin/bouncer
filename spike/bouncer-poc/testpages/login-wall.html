@@ -1,0 +1,7 @@
+<!doctype html><html><head><meta charset="utf-8"><title>login wall</title><link rel="stylesheet" href="style.css"></head>
+<body><main><h1>Login wall (negative)</h1><p>Expected: left alone (gate says not consent, or no model → nothing touched).</p></main>
+<div id="status">untouched</div>
+<div class="modal" id="login" role="dialog">Log in to continue. By continuing you agree to our Terms of Service and acknowledge our Privacy Policy.
+  <button onclick="document.getElementById('status').textContent='CLICKED LOG IN'">Log in</button> <button onclick="document.getElementById('status').textContent='CLICKED CLOSE'">Close</button>
+  <a href="#privacy">Privacy Policy</a></div>
+</body></html>

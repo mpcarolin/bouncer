@@ -1,0 +1,53 @@
+{
+ "id": "tidio-cookiebot",
+ "kind": "positive",
+ "category": "consent-banner",
+ "stage": 1,
+ "round": 2,
+ "note": "Cookiebot CCPA variant: an OPT-OUT toggle \"Do not sell and share my personal information\" (currently off) + Confirm. Least data = switch it ON then Confirm. Hard: only the label variant can express \"turn on\".",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "consent"
+ },
+ "expected": [
+  {
+   "action": "save",
+   "index": 2,
+   "on": [
+    3
+   ]
+  }
+ ],
+ "detectorPicked": true,
+ "fullText": "This website uses cookies. We use cookies to ensure that our website runs smoothly, improve your experience, monitor our performance, and for personalized advertising (ads personalization and ad measurement), including with Google. To learn more about how we use cookies, go here: CCPA. You can also see how Google uses data at Google's Business Data Responsibility Site. By clicking \"Confirm\", you are giving us consent to use all cookies. Confirm Do not sell and share my personal information",
+ "banner": {
+  "url": "https://www.tidio.com/",
+  "vendor": "manual",
+  "selector": "#CybotCookiebotDialog",
+  "text": "This website uses cookies. We use cookies to ensure that our website runs smoothly, improve your experience, monitor our performance, and for personalized advertising (ads personalization and ad measurement), including with Google. To learn more about how we use cookies, go here: CCPA. You can also see how Google uses data at Google's Business Data Responsibility Site. By clicking \"Confirm\", you are giving us consent to use all cookies. Confirm Do not sell and share my personal information",
+  "controls": [
+   {
+    "i": 0,
+    "role": "link",
+    "label": "CCPA"
+   },
+   {
+    "i": 1,
+    "role": "link",
+    "label": "Google's Business Data Responsibility Site"
+   },
+   {
+    "i": 2,
+    "role": "button",
+    "label": "Confirm"
+   },
+   {
+    "i": 3,
+    "role": "toggle",
+    "label": "Do not sell and share my personal information",
+    "on": false
+   }
+  ]
+ },
+ "hard": "opt-out toggle"
+}

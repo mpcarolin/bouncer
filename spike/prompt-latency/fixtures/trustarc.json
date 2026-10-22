@@ -1,0 +1,50 @@
+{
+ "id": "trustarc",
+ "stage": 1,
+ "note": "TrustArc (trustarc.com), reject present.",
+ "capturedAt": "2026-10-22",
+ "expected": [
+  {
+   "action": "reject",
+   "index": 3
+  }
+ ],
+ "banner": {
+  "url": "https://trustarc.com/",
+  "vendor": "trustarc",
+  "selector": "#truste-consent-track",
+  "text": "This site uses cookies and related technologies for site operation, analytics, and third party advertising purposes as described in our TrustArc Privacy Notice. You may choose to consent to our use of these technologies, reject non-essential technologies, or further manage your preferences. To opt-out of sharing with third parties information related to these technologies, select \"Reject Optional\" or submit a request to Do Not Sell or Share My Personal Information. Accept All Reject Optional Manage Settings",
+  "controls": [
+   {
+    "i": 0,
+    "role": "link",
+    "label": "TrustArc Privacy Notice",
+    "id": "truste-privacy-button"
+   },
+   {
+    "i": 1,
+    "role": "link",
+    "label": "Do Not Sell or Share My Personal Information",
+    "id": "do-not-sell-link"
+   },
+   {
+    "i": 2,
+    "role": "button",
+    "label": "Accept All",
+    "id": "truste-consent-button"
+   },
+   {
+    "i": 3,
+    "role": "button",
+    "label": "Reject Optional",
+    "id": "truste-consent-required"
+   },
+   {
+    "i": 4,
+    "role": "button",
+    "label": "Manage Settings",
+    "id": "truste-show-consent"
+   }
+  ]
+ }
+}

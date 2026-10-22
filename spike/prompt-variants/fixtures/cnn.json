@@ -1,0 +1,46 @@
+{
+ "id": "cnn",
+ "kind": "positive",
+ "category": "consent-banner",
+ "stage": 1,
+ "round": 1,
+ "note": "Borderline (user decision 2026-10-22): \"Agree\"-only terms/privacy dialog. Gate = consent dialog; decider = no_option (no way to refuse; acting on it is a product setting).",
+ "capturedAt": "2026-10-22",
+ "gate": {
+  "expected": "consent",
+  "borderline": true
+ },
+ "expected": [
+  {
+   "action": "no_option"
+  }
+ ],
+ "banner": {
+  "url": "https://www.cnn.com/",
+  "vendor": "generic",
+  "selector": "div",
+  "text": "Legal Terms and Privacy By clicking \"Agree\", you agree to the Terms of Use and to the collection and use of your information by cookies and similar technologies, as set forth in our Privacy Policy. Accepting does not impact privacy choices you may have under state laws. Learn more in our US State Supplement. Agree",
+  "controls": [
+   {
+    "i": 0,
+    "role": "link",
+    "label": "Terms of Use"
+   },
+   {
+    "i": 1,
+    "role": "link",
+    "label": "Privacy Policy"
+   },
+   {
+    "i": 2,
+    "role": "link",
+    "label": "US State Supplement"
+   },
+   {
+    "i": 3,
+    "role": "button",
+    "label": "Agree"
+   }
+  ]
+ }
+}

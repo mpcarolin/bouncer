@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 12px/1.4 system-ui, sans-serif; width: 720px; margin: 8px; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { border-bottom: 1px solid #ddd; padding: 2px 4px; text-align: left; vertical-align: top; }
+  th { background: #f4f4f4; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+  .dismissed { color: #137333; } .failed { color: #b00020; } .left-alone, .deferred { color: #777; }
+  .dim { color: #777; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <label><input type="checkbox" id="enabled"> Bouncer on</label>
+    <label><input type="checkbox" id="site"> disable on <b id="host">this site</b></label>
+    <button id="copy">Copy log JSON</button>
+    <button id="clear">Clear log</button>
+    <label class="dim"><input type="checkbox" id="showDeferred"> show "deferred" rows</label>
+    <span id="msg"></span>
+  </div>
+  <div class="dim">Times are ms since navigation start: found = banner detected, decided = decision ready, gone = banner dismissed. Settings take effect on the next page load.</div>
+  <table>
+    <thead><tr><th>site</th><th>path</th><th>gate</th><th>clicked</th><th>found / decided / gone</th><th>model</th><th>outcome</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <script src="popup.js"></script>
+</body>
+</html>
