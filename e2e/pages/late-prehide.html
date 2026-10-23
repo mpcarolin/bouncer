@@ -1,0 +1,12 @@
+<!doctype html><html><head><meta charset="utf-8"><title>custom banner: prehidden late</title><link rel="stylesheet" href="style.css"></head>
+<body><main><h1>Home-grown banner that a cookie library takes over after it shows</h1><p>Expected: the banner gains the class <code>cookie-notification</code>, which one of autoconsent's generic rules prehides, while Bouncer waits to claim; Bouncer sets it aside until autoconsent's prehide lifts, then "Reject all" is clicked: dismissed.</p></main>
+<div id="status">consent: unset</div>
+<div class="banner" id="late-cookie-notice">We use cookies and similar technologies to analyse traffic and personalise ads. You can accept all or reject optional cookies.
+  <button onclick="decide('accepted')">Accept all</button> <button onclick="decide('rejected')">Reject all</button></div>
+<script>
+// The library initialises on the banner the server rendered, giving it the library's class:
+// one autoconsent 16.59 prehides on every page (its generic Blocksy rule), until it has looked.
+setTimeout(() => document.getElementById('late-cookie-notice').classList.add('cookie-notification'), 300);
+function decide(v){ document.getElementById('status').textContent='consent: '+v; document.getElementById('late-cookie-notice').remove(); }
+</script>
+</body></html>

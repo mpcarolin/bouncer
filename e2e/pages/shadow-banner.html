@@ -1,0 +1,19 @@
+<!doctype html><html><head><meta charset="utf-8"><title>custom banner in a shadow root</title><link rel="stylesheet" href="style.css"></head>
+<body><main><h1>Home-grown banner inside an open shadow root</h1><p>Expected: "Reject all" is clicked: dismissed.</p></main>
+<div id="status">consent: unset</div>
+<site-consent></site-consent>
+<script>
+customElements.define('site-consent', class extends HTMLElement {
+  connectedCallback() {
+    if (this.shadowRoot) return;
+    const root = this.attachShadow({ mode: 'open' });
+    root.innerHTML = '<style>.banner { position: fixed; left: 0; right: 0; bottom: 0; background: #222; color: #fff; padding: 16px; z-index: 9999; }</style>'
+      + '<div class="banner">We use cookies and similar technologies to analyse traffic and personalise ads. You can accept all or reject optional cookies. '
+      + '<button id="accept">Accept all</button> <button id="reject">Reject all</button></div>';
+    root.getElementById('accept').addEventListener('click', () => decide('accepted'));
+    root.getElementById('reject').addEventListener('click', () => decide('rejected'));
+  }
+});
+function decide(v){ document.getElementById('status').textContent='consent: '+v; document.querySelector('site-consent').remove(); }
+</script>
+</body></html>

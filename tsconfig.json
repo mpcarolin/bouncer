@@ -18,5 +18,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "test", "scripts", "manifest", "*.config.ts"]
+  "include": ["src", "test", "e2e", "scripts", "manifest", "*.config.ts"]
 }

@@ -1,0 +1,6 @@
+<!doctype html><html><head><meta charset="utf-8"><title>broken reject</title><link rel="stylesheet" href="style.css"></head>
+<body><main><h1>Reject button that does nothing</h1><p>Expected: "Reject all" is clicked, the banner stays: failed, and the banner is put back (visible).</p></main>
+<div id="status">clicks: 0</div>
+<div class="banner" id="cookie-broken">We use cookies for analytics and ads. You can accept all or reject optional cookies.
+  <button onclick="document.getElementById('status').textContent='clicks: reject'">Reject all</button> <button>Accept all</button></div>
+</body></html>

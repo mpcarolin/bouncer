@@ -1,0 +1,33 @@
+body {
+  font: 16px system-ui;
+  margin: 0;
+}
+main {
+  padding: 24px;
+  height: 3000px;
+}
+.banner {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #222;
+  color: #fff;
+  padding: 16px;
+  z-index: 9999;
+}
+.modal {
+  position: fixed;
+  inset: 10% 20%;
+  background: #fff;
+  border: 1px solid #999;
+  padding: 16px;
+  z-index: 10000;
+}
+#status {
+  position: fixed;
+  top: 0;
+  right: 0;
+  background: #ffd;
+  padding: 4px;
+}

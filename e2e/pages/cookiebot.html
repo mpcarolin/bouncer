@@ -1,0 +1,26 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Cookiebot-shaped mock CMP</title><link rel="stylesheet" href="style.css">
+<style>#site-cmp-dialog { position: fixed; left: 0; right: 0; bottom: 0; background: #222; color: #fff; padding: 16px; z-index: 9999; }</style>
+<script>
+// Just what autoconsent's Cybotcookiebot rule (lib/cmps/cookiebot.ts, 16.59) reads: `window.Cookiebot`
+// to detect the CMP (EVAL_COOKIEBOT_1), `hasResponse` and `dialog.visible` for the popup
+// (EVAL_COOKIEBOT_2), the visible #…OptinDeclineAll button it clicks to opt out, and `declined`
+// for its self-test (EVAL_COOKIEBOT_5). The dialog's own id is not one autoconsent prehides, so
+// Bouncer's own path sees it too, and has to stand down for autoconsent.
+window.Cookiebot = {
+  hasResponse: false, declined: false, consented: false,
+  dialog: { visible: true },
+  withdraw() {},
+  hide() { document.getElementById('site-cmp-dialog').style.display = 'none'; this.dialog.visible = false; },
+};
+function decide(declined) {
+  Object.assign(window.Cookiebot, { hasResponse: true, declined, consented: !declined });
+  window.Cookiebot.hide();
+  document.getElementById('status').textContent = 'consent: ' + (declined ? 'declined' : 'accepted');
+}
+</script></head>
+<body><main><h1>Cookiebot-shaped mock CMP</h1><p>Expected: autoconsent's Cybotcookiebot rule opts out ("Deny"), its self-test passes: dismissed. Bouncer's own path stands down.</p></main>
+<div id="status">consent: unset</div>
+<div id="site-cmp-dialog" role="dialog" aria-modal="true">This website uses cookies. We use cookies to personalise content and ads, and to analyse our traffic.
+  <button id="CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll" onclick="decide(false)">Allow all</button>
+  <button id="CybotCookiebotDialogBodyLevelButtonLevelOptinDeclineAll" onclick="decide(true)">Deny</button></div>
+</body></html>

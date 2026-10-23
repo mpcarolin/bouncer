@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8"><title>custom banner: locks scroll</title><link rel="stylesheet" href="style.css"></head>
+<body><main><h1>Home-grown banner that locks scroll, and leaves it locked</h1><p>Expected: "Reject all" is clicked: dismissed, and the page scrolls again (the site's own handler forgets to unlock).</p></main>
+<div id="status">consent: unset</div>
+<script>
+// As on many sites, the banner arrives after the page has loaded, and locks the page's scroll.
+addEventListener('load', () => setTimeout(() => {
+  const b = document.createElement('div');
+  b.className = 'banner'; b.id = 'locking-cookie-notice';
+  b.innerHTML = 'We use cookies and similar technologies to analyse traffic and personalise ads. You can accept all or reject optional cookies. '
+    + '<button onclick="decide(\'accepted\')">Accept all</button> <button onclick="decide(\'rejected\')">Reject all</button>';
+  document.body.append(b);
+  document.body.style.overflow = 'hidden';
+}, 500));
+function decide(v){ document.getElementById('status').textContent='consent: '+v; document.getElementById('locking-cookie-notice').remove(); }
+</script>
+</body></html>
