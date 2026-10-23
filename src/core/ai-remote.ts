@@ -7,8 +7,8 @@ const SEND_TIMEOUT_MS = CREATE_TIMEOUT_MS + PROMPT_TIMEOUT_MS;
 
 /**
  * Content-side AiProvider that forwards each op to the background's provider. It never throws
- * into the page: a rejected send (worker died, no handler) or one that never settles ends as a
- * time-out. The transport can't know whether the model is on-device, so a time-out's meta says
+ * into the page: a rejected send (worker died, no handler), one that never settles, or an
+ * `undefined` reply (the background's handler failed) ends as a time-out. The transport can't know whether the model is on-device, so a time-out's meta says
  * `onDevice: false` (the conservative claim).
  */
 export class RemoteAiProvider implements AiProvider {

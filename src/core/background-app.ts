@@ -98,7 +98,9 @@ export function startBackground(
     const settings = await loadSettings(p.local);
     return {
       // `enabledFor` includes the global switch. A sender with no tab is not a page to act on.
-      enabled: hasTab && enabledFor(settings, from.url),
+      // The verdict is the page's: a child frame (a CMP's iframe, about:blank) is judged by the
+      // tab's site, not its own.
+      enabled: hasTab && enabledFor(settings, from.tabUrl || from.url),
       settings,
       // Task 20 fills this in from the stored rule for the site.
       learnedRule: undefined,

@@ -27,6 +27,8 @@ export async function openExtensionPage(
  * Sends one message to the background and resolves with its reply. Written as an `async`
  * function so that even a synchronous throw (an invalidated extension context) is a rejection.
  */
-export async function sendToBackground<M extends ToBackground>(m: M): Promise<ReplyOf<M>> {
-  return (await chrome.runtime.sendMessage(m)) as ReplyOf<M>;
+export async function sendToBackground<M extends ToBackground>(
+  m: M,
+): Promise<ReplyOf<M> | undefined> {
+  return (await chrome.runtime.sendMessage(m)) as ReplyOf<M> | undefined;
 }

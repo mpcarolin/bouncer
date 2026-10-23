@@ -70,6 +70,21 @@ describe("RemoteAiProvider", () => {
     });
   });
 
+  it("an undefined reply (the background's handler failed) ends as a time-out", async () => {
+    const bg = fakeBackground();
+    bg.onMessage(() => Promise.resolve(undefined));
+    const remote = new RemoteAiProvider(fakeContent(bg));
+    expect(await remote.isConsentDialog(banner)).toMatchObject({ kind: "timeout" });
+    expect(await remote.corroborate(banner, banner.controls[1]!, "reject")).toMatchObject({
+      kind: "timeout",
+    });
+    expect(await remote.status()).toEqual({
+      state: "unavailable",
+      reason: "transport",
+      onDevice: false,
+    });
+  });
+
   it("a send that never settles ends as a time-out after the combined timeout", async () => {
     vi.useFakeTimers();
     const hang: ContentPlatform = { send: () => new Promise(() => {}), onMessage: () => {} };

@@ -43,6 +43,13 @@ function started(over: Parameters<typeof startBackground>[2] = {}) {
   return { bg, app, calls, provider };
 }
 
+/** A reply that must have come: fails the test on `undefined`, which is what a failed background sends. */
+async function replied<T>(reply: Promise<T | undefined>): Promise<T> {
+  const r = await reply;
+  if (r === undefined) throw new Error("expected a reply, got undefined");
+  return r;
+}
+
 const entry = (site: string): Omit<LogEntry, "id"> => ({
   at: Date.now(),
   site,
@@ -85,8 +92,38 @@ describe("hello", () => {
     const child = fakeContent(bg, { tabId: 1, frameId: 3, documentId: "child-doc" });
     await top.send({ type: "hello" });
     await top.send({ type: "claim" });
-    await child.send({ type: "hello" });
+    expect(await child.send({ type: "hello" })).toMatchObject({ enabled: true });
     expect(await top.send({ type: "claim" })).toEqual({ granted: false, reason: "already" });
+  });
+
+  it("judges a child frame by the tab's site, not the frame's own", async () => {
+    const { bg } = started();
+    await saveSettings(bg.local, { ...DEFAULT_SETTINGS, disabledSites: ["news.example"] });
+    const tabUrl = "https://news.example/story";
+    // A CMP's iframe and an about:blank frame, both on a page whose site is disabled.
+    const cmp = fakeContent(bg, {
+      frameId: 2,
+      documentId: "c",
+      url: "https://cmp.vendor.test/x",
+      tabUrl,
+    });
+    const blank = fakeContent(bg, { frameId: 3, documentId: "b", url: "about:blank", tabUrl });
+    for (const frame of [cmp, blank]) {
+      expect(await frame.send({ type: "hello" })).toMatchObject({ enabled: false });
+    }
+    // With no tab URL to go on, the frame's own URL is what is judged.
+    const noTabUrl = (url: string) =>
+      fakeContent(bg, { frameId: 4, documentId: "n", url, tabUrl: "" }).send({ type: "hello" });
+    expect(await noTabUrl("https://news.example/f")).toMatchObject({ enabled: false });
+    expect(await noTabUrl("https://fine.example/f")).toMatchObject({ enabled: true });
+    // ...and the other way round: a frame served from a disabled host, on a page that isn't.
+    const embedded = fakeContent(bg, {
+      frameId: 5,
+      documentId: "e",
+      url: "https://news.example/widget",
+      tabUrl: "https://other.example/",
+    });
+    expect(await embedded.send({ type: "hello" })).toMatchObject({ enabled: true });
   });
 
   it("replies with the settings, the verdict for the sender's URL, and no learned rule yet", async () => {
@@ -99,13 +136,13 @@ describe("hello", () => {
       learnedRule: undefined,
     });
     const off = await fakeContent(bg, { url: "https://www.off.example/" }).send({ type: "hello" });
-    expect(off.enabled).toBe(false);
+    expect(off?.enabled).toBe(false);
   });
 
   it("replies enabled: false everywhere when Bouncer is switched off globally", async () => {
     const { bg } = started();
     await saveSettings(bg.local, { ...DEFAULT_SETTINGS, enabled: false });
-    const reply = await fakeContent(bg).send({ type: "hello" });
+    const reply = await replied(fakeContent(bg).send({ type: "hello" }));
     expect(reply.enabled).toBe(false);
     expect(reply.settings.enabled).toBe(false);
   });
@@ -114,14 +151,14 @@ describe("hello", () => {
     const { bg, app } = started();
     await saveSettings(bg.local, { ...DEFAULT_SETTINGS, disabledSites: ["example.com"] });
     const top = fakeContent(bg, { documentId: "d1" });
-    expect((await top.send({ type: "hello" })).enabled).toBe(false);
+    expect((await top.send({ type: "hello" }))?.enabled).toBe(false);
     expect(await app.arbiter.claimForBouncer(1, "d1")).toEqual({ granted: true });
   });
 
   it("from a sender with no tab stands down and leaves no state behind", async () => {
     const { bg } = started();
-    const page = fakeContent(bg, { tabId: -1, frameId: -1, documentId: "ext-doc" });
-    const reply = await page.send({ type: "hello" });
+    const page = fakeContent(bg, { tabId: -1, frameId: -1, documentId: "popup-doc" });
+    const reply = await replied(page.send({ type: "hello" }));
     expect(reply.enabled).toBe(false);
     expect(reply.settings).toEqual(DEFAULT_SETTINGS);
     expect(await bg.session.get("arb:-1")).toBeUndefined();
@@ -153,7 +190,7 @@ describe("claim", () => {
 
   it("from a sender with no tab is stale and records nothing", async () => {
     const { bg } = started();
-    const page = fakeContent(bg, { tabId: -1, frameId: -1, documentId: "ext-doc" });
+    const page = fakeContent(bg, { tabId: -1, frameId: -1, documentId: "popup-doc" });
     expect(await page.send({ type: "claim" })).toEqual({ granted: false, reason: "stale" });
     expect(await bg.session.get("arb:-1")).toBeUndefined();
   });
@@ -162,7 +199,10 @@ describe("claim", () => {
     const { bg } = started();
     const top = fakeContent(bg, { documentId: "d1" });
     await top.send({ type: "hello" });
-    const replies = await Promise.all([top.send({ type: "claim" }), top.send({ type: "claim" })]);
+    const replies = await Promise.all([
+      replied(top.send({ type: "claim" })),
+      replied(top.send({ type: "claim" })),
+    ]);
     expect(replies.filter((r) => r.granted)).toHaveLength(1);
     expect(replies.find((r) => !r.granted)?.reason).toBe("already");
   });
@@ -180,7 +220,7 @@ describe("claim", () => {
 
 describe("ai", () => {
   const ask = (c: ReturnType<typeof fakeContent>) =>
-    c.send({ type: "ai", op: "isConsentDialog", args: [banner] });
+    replied(c.send({ type: "ai", op: "isConsentDialog", args: [banner] }));
 
   it("serves each op through the provider", async () => {
     const { bg } = started();
@@ -281,8 +321,8 @@ describe("ai", () => {
   it("serves status to a child frame, and to a sender with no tab", async () => {
     const { bg } = started();
     const child = fakeContent(bg, { frameId: 5 });
-    const ext = fakeContent(bg, { tabId: -1, frameId: -1, documentId: "ext-doc" });
-    for (const c of [child, ext]) {
+    const popup = fakeContent(bg, { tabId: -1, frameId: -1, documentId: "popup-doc" });
+    for (const c of [child, popup]) {
       expect(await c.send({ type: "ai", op: "status", args: [] })).toMatchObject({
         state: "available",
       });
@@ -291,8 +331,8 @@ describe("ai", () => {
 
   it("refuses model ops from a sender with no tab", async () => {
     const { bg, calls } = started();
-    const ext = fakeContent(bg, { tabId: -1, frameId: -1, documentId: "ext-doc" });
-    expect(await ask(ext)).toMatchObject({ kind: "error", error: "no_tab" });
+    const popup = fakeContent(bg, { tabId: -1, frameId: -1, documentId: "popup-doc" });
+    expect(await ask(popup)).toMatchObject({ kind: "error", error: "no_tab" });
     expect(calls.model).toBe(0);
   });
 
@@ -319,7 +359,7 @@ describe("log and logPatch", () => {
   it("adds an entry, returns its id, and patches it", async () => {
     const { bg, app } = started();
     const top = fakeContent(bg);
-    const { id } = await top.send({ type: "log", entry: entry("a.example") });
+    const { id } = await replied(top.send({ type: "log", entry: entry("a.example") }));
     await top.send({ type: "logPatch", id, patch: { outcome: "dismissed", t: { gone: 900 } } });
     const [saved] = await app.log.list();
     expect(saved).toMatchObject({ id, site: "a.example", outcome: "dismissed", t: { gone: 900 } });
@@ -355,7 +395,13 @@ describe("saveRule and discardRule", () => {
 });
 
 describe("the message handler's contract with the platform", () => {
-  const from = { tabId: 1, frameId: 0, documentId: "d1", url: "https://example.com/" };
+  const from = {
+    tabId: 1,
+    frameId: 0,
+    documentId: "d1",
+    url: "https://example.com/",
+    tabUrl: "https://example.com/",
+  };
 
   function handlerOf() {
     const bg = fakeBackground();
@@ -478,10 +524,20 @@ describe("autoconsent messages", () => {
       frameId: 2,
       documentId: "f",
       url: "https://x.test/",
+      tabUrl: "https://page.test/",
     });
     expect(await frame.send(popupFound as never)).toBeUndefined();
     expect(seen).toEqual([
-      { msg: popupFound, from: { tabId: 6, frameId: 2, documentId: "f", url: "https://x.test/" } },
+      {
+        msg: popupFound,
+        from: {
+          tabId: 6,
+          frameId: 2,
+          documentId: "f",
+          url: "https://x.test/",
+          tabUrl: "https://page.test/",
+        },
+      },
     ]);
   });
 
@@ -543,6 +599,6 @@ describe("a failing message", () => {
     const top = fakeContent(bg);
     expect(await top.send({ type: "hello" })).toBeUndefined();
     get.mockRestore();
-    expect((await top.send({ type: "hello" })).enabled).toBe(true);
+    expect((await top.send({ type: "hello" }))?.enabled).toBe(true);
   });
 });

@@ -3,8 +3,9 @@ import type { BackgroundPlatform, Sender } from "../../core/platform.ts";
 import { chromeKV, openExtensionPage } from "./shared.ts";
 
 /**
- * Chrome's sender, as Bouncer's. A sender with no tab (an extension page) gets tabId -1, and one
- * with no frame gets frameId -1, so it can never pass for a page's top frame (frameId 0).
+ * Chrome's sender, as Bouncer's. A sender with no tab (a popup or an offscreen document) gets
+ * tabId -1, and one with no frame gets frameId -1, so it can never pass for a page's top frame
+ * (frameId 0). `url` is the frame's own and `tabUrl` the tab's; each falls back to the other.
  */
 function toSender(s: chrome.runtime.MessageSender): Sender {
   return {
@@ -12,6 +13,7 @@ function toSender(s: chrome.runtime.MessageSender): Sender {
     frameId: s.frameId ?? -1,
     documentId: s.documentId ?? "",
     url: s.url ?? s.tab?.url ?? "",
+    tabUrl: s.tab?.url ?? s.url ?? "",
   };
 }
 

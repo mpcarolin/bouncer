@@ -6,12 +6,18 @@ export interface KV {
   remove(k: string): Promise<void>;
 }
 
-/** Who sent a message. An extension page (no tab) has `tabId` -1 and `frameId` -1. */
+/**
+ * Who sent a message. A sender with no tab (a popup or an offscreen document; settings and
+ * onboarding are tabs) has `tabId` -1 and `frameId` -1.
+ */
 export interface Sender {
   tabId: number;
   frameId: number;
   documentId: string;
+  /** The sending frame's own URL. For a child frame this is the frame's, not the page's. */
   url: string;
+  /** The URL of the tab the frame is in, i.e. the page the user is on. `url` if unknown. */
+  tabUrl: string;
 }
 
 export type PageName = "settings" | "onboarding";
@@ -36,12 +42,17 @@ export interface BackgroundPlatform {
 }
 
 export interface ContentPlatform {
-  send<M extends ToBackground>(m: M): Promise<ReplyOf<M>>;
+  /**
+   * Resolves `undefined` when the background could not answer (its handler failed). Rejects when
+   * there is no background to ask. Either way, the caller stands down.
+   */
+  send<M extends ToBackground>(m: M): Promise<ReplyOf<M> | undefined>;
   onMessage(h: (m: ToContent) => void): void;
 }
 
 export interface PagePlatform {
   local: KV;
-  send<M extends ToBackground>(m: M): Promise<ReplyOf<M>>;
+  /** As `ContentPlatform.send`. */
+  send<M extends ToBackground>(m: M): Promise<ReplyOf<M> | undefined>;
   openPage(p: PageName, query?: Record<string, string>): Promise<void>;
 }

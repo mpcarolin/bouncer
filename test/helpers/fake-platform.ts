@@ -127,24 +127,33 @@ export function fakeBackground(): FakeBackground {
 }
 
 export interface FakeContent extends ContentPlatform {
-  /** Mutable: tests may change `url` (navigation) or `documentId`. */
+  /**
+   * Mutable: tests may change `url` and `tabUrl` (navigation; for a top frame they are the same
+   * page) or `documentId`.
+   */
   sender: Sender;
   /** @internal */
   handlers: ((m: ToContent) => void)[];
 }
 
+/**
+ * `sender.tabUrl` defaults to `sender.url`, which is right for a top frame. For a child frame,
+ * pass both.
+ */
 export function fakeContent(bg: FakeBackground, sender: Partial<Sender> = {}): FakeContent {
+  const url = sender.url ?? "https://example.com/";
   const content: FakeContent = {
     sender: {
       tabId: 1,
       frameId: 0,
       documentId: "doc-1",
-      url: "https://example.com/",
+      tabUrl: url,
       ...sender,
+      url,
     },
     handlers: [],
     send<M extends ToBackground>(m: M) {
-      return bg.deliver(m, content.sender) as Promise<ReplyOf<M>>;
+      return bg.deliver(m, content.sender) as Promise<ReplyOf<M> | undefined>;
     },
     onMessage(h) {
       content.handlers.push(h);

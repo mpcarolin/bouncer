@@ -30,7 +30,7 @@ describe("chromeBackground storage", () => {
 });
 
 describe("chromeBackground.onMessage", () => {
-  it("hands the handler Chrome's sender as Bouncer's Sender", async () => {
+  it("hands the handler Chrome's sender as Bouncer's Sender, the frame's URL and the tab's apart", async () => {
     const fc = installFakeChrome();
     const seen: unknown[] = [];
     chromeBackground().onMessage((msg, from) => {
@@ -54,38 +54,46 @@ describe("chromeBackground.onMessage", () => {
           frameId: 3,
           documentId: "doc-9",
           url: "https://frame.example/x",
+          tabUrl: "https://tab.example/",
         },
       },
     ]);
   });
 
-  it("gives a sender with no tab or frame tabId -1 and frameId -1", () => {
+  it("gives a sender with no tab or frame tabId -1 and frameId -1, and its own URL as both", () => {
     const fc = installFakeChrome();
     const froms: unknown[] = [];
     chromeBackground().onMessage((_m, from) => {
       froms.push(from);
       return undefined;
     });
-    fc.deliver({ type: "hello" }, { url: "chrome-extension://fake-extension-id/settings.html" });
+    fc.deliver({ type: "hello" }, { url: "chrome-extension://fake-extension-id/popup.html" });
     expect(froms).toEqual([
       {
         tabId: -1,
         frameId: -1,
         documentId: "",
-        url: "chrome-extension://fake-extension-id/settings.html",
+        url: "chrome-extension://fake-extension-id/popup.html",
+        tabUrl: "chrome-extension://fake-extension-id/popup.html",
       },
     ]);
   });
 
-  it("falls back to the tab's URL when the sender has none of its own", () => {
+  it("falls back from the frame's URL to the tab's, and from the tab's to the frame's", () => {
     const fc = installFakeChrome();
-    const urls: string[] = [];
+    const urls: { url: string; tabUrl: string }[] = [];
     chromeBackground().onMessage((_m, from) => {
-      urls.push(from.url);
+      urls.push({ url: from.url, tabUrl: from.tabUrl });
       return undefined;
     });
     fc.deliver({}, { tab: { id: 1, url: "https://tab.example/" }, frameId: 0 });
-    expect(urls).toEqual(["https://tab.example/"]);
+    fc.deliver({}, { tab: { id: 1 }, frameId: 0, url: "https://frame.example/" });
+    fc.deliver({}, { tab: { id: 1 }, frameId: 0 });
+    expect(urls).toEqual([
+      { url: "https://tab.example/", tabUrl: "https://tab.example/" },
+      { url: "https://frame.example/", tabUrl: "https://frame.example/" },
+      { url: "", tabUrl: "" },
+    ]);
   });
 
   it("replies at once and closes the channel when the handler returns undefined", async () => {
