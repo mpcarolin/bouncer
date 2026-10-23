@@ -43,7 +43,7 @@ import {
   reappeared,
   stillSame,
 } from "./page-checks.ts";
-import { recordBanner, replay } from "./replay.ts";
+import { NOT_THE_BANNER, recordBanner, replay } from "./replay.ts";
 import {
   type Actions,
   type HopDeps,
@@ -365,8 +365,8 @@ export class OwnPath {
   private async run(r: Run): Promise<Ending> {
     if (this.acDetected) return { outcome: "deferred", reason: "autoconsent_detected" };
     // The gate, the labeller and the chooser see only what is shown; a save covers the rest.
-    const full = serialise(r.c, clickability, { hiddenToggles: true });
-    const ser = shownOnly(full);
+    let full = serialise(r.c, clickability, { hiddenToggles: true });
+    let ser = shownOnly(full);
     // §2b: wait up to CLAIM_WAIT_MS from finding the candidate, unless autoconsent's detection
     // ends first. The model calls run during the wait; a replay makes none, but waits all the same.
     const waited = this.claimWait();
@@ -381,7 +381,8 @@ export class OwnPath {
       const res = await replay(this.rule, {
         banner: r.c.el,
         full,
-        act: async (plan) => {
+        wait: settled,
+        act: (plan) => {
           r.replayed = true;
           r.entry.path = "learned";
           r.entry.gate = "skipped";
@@ -391,14 +392,17 @@ export class OwnPath {
             ),
           );
           r.entry.t.decided = this.clock.now();
-          return (await settled()) ?? this.act(r, plan);
+          return this.act(r, plan);
         },
       });
       if (res.outcome !== "discard_and_run_pipeline") return res;
-      // Nothing touched: the full pipeline decides on this candidate. Whether the rule goes
-      // depends on what the candidate turns out to be (see `keepRules`).
+      // Nothing touched: the full pipeline decides on this candidate, as it is now (the mismatch
+      // may have come after the claim wait). Whether the rule goes depends on what the
+      // candidate turns out to be (see `keepRules`).
       r.mismatch = res.reason;
       r.entry.notes.push(`learned:mismatch:${res.reason}`);
+      full = serialise(r.c, clickability, { hiddenToggles: true });
+      ser = shownOnly(full);
     }
 
     const v = await this.verdict(r, ser.banner);
@@ -698,17 +702,21 @@ export class OwnPath {
   }
 
   /**
-   * §2h, once the outcome is final. A failed replay discards its rule. A stage-1 mismatch does too
-   * once the pipeline took that candidate for the consent banner (the gate said so, or the fast
-   * path acted on it): a login wall or chat widget seen first, or a candidate the model could not
-   * judge, leaves the rule for the banner after it or the next visit. A verified deterministic
-   * refusal is learned, after any discard, so it replaces the old rule.
+   * §2h, once the outcome is final. A failed replay discards its rule. A candidate that is not the
+   * rule's banner (no cookie or consent wording, or other controls) says nothing against the rule,
+   * which is kept: a login wall, chat widget or newsletter modal seen first leaves it for the
+   * banner after it, and a banner that changed is simply learned again. The rule's own banner
+   * failing stage 1's checks (a target or toggle no longer fits) discards it, once the pipeline
+   * took that candidate for the consent banner (the gate said so, or the fast path acted on it);
+   * a candidate the model could not judge leaves it for the next visit. A verified deterministic
+   * refusal is learned, after any discard, and its rule overwrites the site's.
    */
   private async keepRules(r: Run): Promise<void> {
     const { site, outcome } = r.entry;
     try {
       const wasBanner = r.entry.gate === "consent" || r.acted;
-      const stale = r.replayed ? outcome === "failed" : r.mismatch !== undefined && wasBanner;
+      const misfit = r.mismatch !== undefined && !NOT_THE_BANNER.has(r.mismatch);
+      const stale = r.replayed ? outcome === "failed" : misfit && wasBanner;
       if (this.rule && stale) {
         this.rule = undefined; // not tried again on this page, whatever the background did
         const res = await this.send({ type: "discardRule", site });

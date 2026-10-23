@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest";
 import type { AiResult } from "../../src/core/ai.ts";
+import { CLAIM_WAIT_MS } from "../../src/core/config.ts";
 import type { LearnedBanner, LearnedRule } from "../../src/core/learned.ts";
 import type { LogEntry } from "../../src/core/log.ts";
 import { clickability } from "../../src/core/page/clickable.ts";
@@ -8,13 +9,14 @@ import { serialise } from "../../src/core/page/serialise.ts";
 import { recordBanner, replay } from "../../src/core/pipeline/replay.ts";
 import type { ContentPlatform } from "../../src/core/platform.ts";
 import { siteOf } from "../../src/core/settings.ts";
-import type { Label, SerialisedBanner } from "../../src/core/types.ts";
+import type { Clock, Label, SerialisedBanner } from "../../src/core/types.ts";
 import { mount, mountPage } from "../helpers/mount.ts";
 import {
   Agreeable,
   byId,
   Counting,
   cleanup,
+  fastClock,
   HIDDEN,
   type Harness,
   type StartOpts,
@@ -318,6 +320,7 @@ describe("learned rules (§2h)", () => {
       replay(rule, {
         banner,
         full: serialise({ el: banner }, clickability, { hiddenToggles: true }),
+        wait: async () => undefined,
         act: async () => {
           acted = true;
           return { outcome: "dismissed" };
@@ -355,8 +358,9 @@ describe("learned rules (§2h)", () => {
       clicked: [{ text: "Decline all", aiOnly: false }],
     });
     expect(window.__clicked).toBe("reject");
-    // Discarded, then learned again from the pipeline's own refusal.
-    expect(ruleChanges(sent)).toEqual(["discardRule", "saveRule"]);
+    // Its controls changed, so this is not the rule's banner: the rule is kept, and the
+    // pipeline's own refusal is learned over it.
+    expect(ruleChanges(sent)).toEqual(["saveRule"]);
     expect((await h.app.rules.get(site))?.stage1.target.text).toBe("Decline all");
   });
 
@@ -630,17 +634,20 @@ describe("learned rules (§2h)", () => {
     expect(await h.app.rules.get(site)).toEqual(rule);
   });
 
-  test("a mismatch on a candidate the gate couldn't judge keeps the rule: only the banner's own mismatch discards it", async () => {
+  test("a stage-1 mismatch on a candidate the gate couldn't judge keeps the rule: only the banner's own mismatch discards it", async () => {
     const { rule } = await learn("custom-reject");
     mountPage("custom-reject");
     const banner = byId("my-cookie-notice");
-    (buttons("my-cookie-notice")[1] as Element).textContent = "Decline all";
+    // The same controls (so the same fingerprint), but the reject is no longer where it was.
+    const [first, second] = buttons("my-cookie-notice") as Element[] as [Element, Element];
+    first.textContent = "Reject all";
+    second.textContent = "Accept all";
     banner.append(" [mock:timeout]");
     const sent: string[] = [];
     const h = await start({ rules: [rule], platform: recording(sent) });
 
     const e = await h.path.done;
-    expect(e.notes).toContain("learned:mismatch:banner_changed");
+    expect(e.notes).toContain("learned:mismatch:text_changed");
     expect(e).toMatchObject({ outcome: "unsure", reason: "model_timeout", clicked: [] });
     expect(ruleChanges(sent)).toEqual([]);
     expect(await h.app.rules.get(site)).toEqual(rule);
@@ -736,7 +743,7 @@ describe("learned rules (§2h)", () => {
     }
   });
 
-  test("the notes say what the background did: a refused save is save_failed, an unrecordable flow says so", async () => {
+  test("the notes say what the background did: save_failed, discard_failed, and an unrecordable flow", async () => {
     mountPage("custom-reject");
     let h = await start({
       platform: (content) => ({
@@ -764,6 +771,78 @@ describe("learned rules (§2h)", () => {
     expect(e).toMatchObject({ outcome: "dismissed", path: "ai" });
     expect(e.notes).toContain("learned:unrecordable");
     expect(ruleChanges(sent)).toEqual([]);
+    cleanup();
+
+    // A failed replay whose discard the background refuses.
+    mountPage("broken-reject");
+    const broken = byId("cookie-broken");
+    const rule: LearnedRule = {
+      site,
+      createdAt: Date.now(),
+      banner: bannerOf(broken),
+      stage1: {
+        action: "reject",
+        target: {
+          selector: selectorFor(buttons("cookie-broken")[0] as Element, broken),
+          text: "Reject all",
+          label: "reject",
+        },
+      },
+    };
+    h = await start({
+      rules: [rule],
+      platform: (content) => ({
+        onMessage: (fn) => content.onMessage(fn),
+        send: ((m) =>
+          m.type === "discardRule"
+            ? Promise.resolve({ stored: false })
+            : content.send(m)) as ContentPlatform["send"],
+      }),
+    });
+    e = await h.path.done;
+    expect(e).toMatchObject({ outcome: "failed", path: "learned" });
+    expect(e.notes).toContain("learned:discard_failed");
+    expect(e.notes).not.toContain("learned:discarded");
+  });
+
+  test("a banner whose controls change during the claim wait goes to the pipeline, nothing touched", async () => {
+    const { rule } = await learn("custom-reject");
+    mountPage("custom-reject");
+    const banner = byId("my-cookie-notice");
+    // The site adds a control just as the claim wait ends: after the replay's first check passed,
+    // before anything is claimed or touched.
+    const clock: Clock = {
+      ...fastClock,
+      setTimeout: (fn, ms) =>
+        fastClock.setTimeout(
+          ms === CLAIM_WAIT_MS
+            ? () => {
+                banner.insertAdjacentHTML("beforeend", "<button>Customise</button>");
+                fn();
+              }
+            : fn,
+          ms,
+        ),
+    };
+    const provider = new Counting();
+    let h: Harness | undefined;
+    let touchedAtGate: number | undefined;
+    provider.onCall = (op) => {
+      if (op === "isConsentDialog" && h) touchedAtGate = h.clicks.length + h.hidden.length;
+    };
+    const sent: string[] = [];
+    h = await start({ rules: [rule], clock, provider, platform: recording(sent) });
+
+    const e = await h.path.done;
+    expect(touchedAtGate).toBe(0);
+    expect(e.notes).toContain("learned:mismatch:banner_changed");
+    // The pipeline decided on the banner as it is now, Customise included.
+    expect(e).toMatchObject({ outcome: "dismissed", path: "ai", gate: "consent" });
+    expect(e.clicked).toEqual([expect.objectContaining({ text: "Reject all", aiOnly: false })]);
+    expect(Object.values(e.labels ?? {}).map((l) => l.label)).toContain("settings");
+    expect(sent.filter((t) => t === "claim")).toHaveLength(1);
+    expect(ruleChanges(sent)).toEqual(["saveRule"]);
+    expect((await h.app.rules.get(site))?.banner.controls).toContain("settings|customise");
   });
 
   test("autoconsent owns the page: the replay stands down at the claim, nothing touched, rule kept", async () => {

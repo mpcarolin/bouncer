@@ -53,6 +53,15 @@ export function recordBanner(el: Element, full: Serialised): LearnedBanner | und
 }
 
 /**
+ * `checkBanner`'s reasons: the candidate is not the rule's banner, which says nothing against the
+ * rule. Every other mismatch is the rule's banner no longer fitting the rule.
+ */
+export const NOT_THE_BANNER: ReadonlySet<string> = new Set([
+  "no_consent_wording",
+  "banner_changed",
+]);
+
+/**
  * Why the rule is not for this candidate, or undefined when it is: the candidate must have cookie
  * or consent wording and exactly the rule's controls. A newsletter modal or age gate built from
  * the same component, whose "No thanks" sits where the banner's reject did, fails this.
@@ -64,6 +73,14 @@ export function checkBanner(banner: LearnedBanner, full: Serialised): string | u
     now.length === banner.controls.length && now.every((c, i) => c === banner.controls[i]);
   return same ? undefined : "banner_changed";
 }
+
+/** The rule against this candidate: its banner, then stage 1. */
+function checkRule(rule: LearnedRule, banner: Element, full: Serialised): StageCheck {
+  const other = checkBanner(rule.banner, full);
+  return other ? { ok: false, reason: other } : checkStage(rule.stage1, banner, full, true);
+}
+
+const serialiseFull = (el: Element) => serialise({ el }, clickability, { hiddenToggles: true });
 
 /** A stage's controls, found in its root and checked: their ids in the root's serialisation. */
 export interface Checked {
@@ -135,16 +152,22 @@ export interface ReplayDeps {
   banner: Element;
   full: Serialised;
   /**
-   * The own path's machinery, after its claim wait: claim the page (standing down if refused),
-   * hide the banner, perform `plan`, verify, and say how it ended. Called only once stage 1 has
-   * passed its checks.
+   * §2b's claim wait: how the run ends if Bouncer must stand down (autoconsent took the page, or
+   * the pipeline was stopped), else undefined once it may claim.
+   */
+  wait(): Promise<{ outcome: Outcome; reason?: string } | undefined>;
+  /**
+   * The own path's machinery: claim the page (standing down if refused), hide the banner,
+   * perform `plan`, verify, and say how it ended. Called only once the checks have passed, after
+   * the wait.
    */
   act(plan: Plan): Promise<{ outcome: Outcome; reason?: string }>;
 }
 
 /**
  * How a replay ended. `discard_and_run_pipeline`: the candidate is not the rule's banner, or
- * stage 1 failed its checks, before anything was touched; the full pipeline decides on it.
+ * stage 1 failed its checks, before anything was touched (before or after the claim wait); the
+ * full pipeline decides on it.
  */
 export type ReplayResult =
   | { outcome: Outcome; reason?: string }
@@ -156,13 +179,18 @@ export type ReplayResult =
  * settings click, wait up to the panel window for stage 2's targets and check them, any failure
  * from there on being `failed`; set toggles to their target states, clicking only those that
  * differ; re-read them (§2f.2) before saving; and verify (§2g). No model call is made.
+ *
+ * The checks run when the candidate appears and again after the claim wait: a banner that
+ * changed during the wait, with nothing touched yet, goes to the pipeline like one that never fit.
  */
 export async function replay(rule: LearnedRule, d: ReplayDeps): Promise<ReplayResult> {
-  const other = checkBanner(rule.banner, d.full);
-  if (other) return { outcome: "discard_and_run_pipeline", reason: other };
-  const first = checkStage(rule.stage1, d.banner, d.full, true);
+  const first = checkRule(rule, d.banner, d.full);
   if (!first.ok) return { outcome: "discard_and_run_pipeline", reason: first.reason };
-  return d.act(planFor(rule, d.banner, first));
+  const stood = await d.wait();
+  if (stood) return stood;
+  const now = checkRule(rule, d.banner, serialiseFull(d.banner));
+  if (!now.ok) return { outcome: "discard_and_run_pipeline", reason: now.reason };
+  return d.act(planFor(rule, d.banner, now));
 }
 
 function planFor(rule: LearnedRule, banner: Element, first: Checked): Plan {
@@ -172,9 +200,7 @@ function planFor(rule: LearnedRule, banner: Element, first: Checked): Plan {
     // The banner's and stage 1's checks again, toggles and all, on the same target: the claim
     // wait gave the site time to change the banner, and a replay has no gate to fall back on.
     fresh: () => {
-      const ser = serialise({ el: banner }, clickability, { hiddenToggles: true });
-      if (checkBanner(rule.banner, ser)) return false;
-      const again = checkStage(rule.stage1, banner, ser, true);
+      const again = checkRule(rule, banner, serialiseFull(banner));
       if (!again.ok || again.ser.elements.get(again.target) !== target) return false;
       now = again;
       return true;
@@ -208,7 +234,7 @@ function byRule(stage2: Stage2 | undefined): Refuse {
     const pollMs = deps.panel?.pollMs ?? POLL_MS;
     for (;;) {
       if (deps.stopped()) return fail("stopped");
-      const ser = serialise({ el: panel }, clickability, { hiddenToggles: true });
+      const ser = serialiseFull(panel);
       const check = checkStage(stage2, panel, ser, false);
       if (check.ok) {
         const d: PanelRefusal =

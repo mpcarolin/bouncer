@@ -119,6 +119,8 @@ export interface StartOpts {
   ai?: AiProvider;
   /** Learned rules the background holds before `hello`, as if from an earlier visit. */
   rules?: LearnedRule[];
+  /** The pipeline's clock, in place of `fastClock` (to act at a given timer, say). */
+  clock?: Clock;
 }
 
 const teardown: (() => void)[] = [];
@@ -176,7 +178,7 @@ export async function start(o: StartOpts = {}): Promise<Harness> {
     ai: o.ai ?? new RemoteAiProvider(content),
     settings: { ...DEFAULT_SETTINGS, ...o.settings },
     learnedRule: hello?.learnedRule,
-    clock: fastClock,
+    clock: o.clock ?? fastClock,
     verify: VERIFY,
     panel: PANEL,
   });
