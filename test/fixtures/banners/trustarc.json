@@ -2,7 +2,7 @@
   "id": "trustarc",
   "kind": "positive",
   "stage": 1,
-  "note": "TrustArc (trustarc.com), reject present. Labels: the 'Do Not Sell or Share' link (1) is a link to a request form, not an in-place refusal, so 'link' (§0 never clicks it). Decision: 'Reject Optional' (3), §2f.1.",
+  "note": "TrustArc (trustarc.com), reject present. Labels: the 'Do Not Sell or Share' link (1) is a link to a request form, not an in-place refusal; the labeller gives do-not-sell wording 'other' and blocks it (§0). Decision: 'Reject Optional' (3), §2f.1.",
   "gate": "consent",
   "banner": {
     "text": "This site uses cookies and related technologies for site operation, analytics, and third party advertising purposes as described in our TrustArc Privacy Notice. You may choose to consent to our use of these technologies, reject non-essential technologies, or further manage your preferences. To opt-out of sharing with third parties information related to these technologies, select \"Reject Optional\" or submit a request to Do Not Sell or Share My Personal Information. Accept All Reject Optional Manage Settings",
@@ -41,7 +41,7 @@
   },
   "expectedLabels": {
     "0": "link",
-    "1": "link",
+    "1": "other",
     "2": "accept",
     "3": "reject",
     "4": "settings"

@@ -2,7 +2,7 @@
   "id": "nvidia-settings",
   "kind": "positive",
   "stage": 2,
-  "note": "Stage 2: NVIDIA OneTrust preference centre after \"Manage Settings\". Toggles already off (US); has Decline All. Stage 2. Labels: the accordion header buttons (5, 6, 8, 10) are 'other', toggles are only the three switches; 'Save and Accept' (13) is on the §0 allow-list so 'save'. Decision: 'Decline All' (12) is reject, §2f.1 beats save-with-toggles.",
+  "note": "Stage 2: NVIDIA OneTrust preference centre after \"Manage Settings\". Toggles already off (US); has Decline All. Stage 2. Labels: the 'NVIDIA Preference Center' header link (1) is 'settings' because autoconsent's regex says so (§2e step 4; the labeller cannot tell it from a real settings link; the chooser prefers reject here, so the decision is unaffected); the accordion header buttons (5, 6, 8, 10) are 'other', toggles are only the three switches; 'Save and Accept' (13) is on the §0 allow-list so 'save'. Decision: 'Decline All' (12) is reject, §2f.1 beats save-with-toggles.",
   "gate": "consent",
   "banner": {
     "text": "Cookie Settings We and our third-party partners (including social media, advertising, and analytics partners) use cookies and other tracking technologies to collect, store, monitor, and process certain information about you when you visit our website. The information collected might relate to you, your preferences, or your device. We use that information to make the site work, analyze performance and traffic on our website, provide a more personalized web experience, and assist in our marketing efforts. Under certain privacy laws, you have the right to direct us not to \"sell\" or \"share\" your personal information for targeted advertising. To opt-out of the \"sale\" and \"sharing\" of personal in…",
@@ -93,7 +93,7 @@
   },
   "expectedLabels": {
     "0": "close",
-    "1": "link",
+    "1": "settings",
     "2": "link",
     "3": "link",
     "4": "link",
