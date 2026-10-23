@@ -23,7 +23,8 @@ import type {
  *   `session` contents are kept.
  * - `fakeContent(bg, sender?)` is one frame's content script. Its `send` reaches the background's
  *   message handler with `content.sender` as the sender (a mutable field: change `url` to simulate
- *   navigation). `bg.sendToFrame` reaches the content whose `sender.tabId`/`frameId` match: every
+ *   navigation). `bg.sendToFrame` reaches the content whose `sender.tabId`/`frameId` (and
+ *   `documentId`, when the call names one) match: every
  *   message lands in its `inbox` (autoconsent's too, since its content script shares the frame),
  *   and Bouncer's own also reach the `onMessage` handlers.
  */
@@ -59,6 +60,8 @@ export interface FakeBackground extends BackgroundPlatform {
   opened: PageName[];
   /** The same calls with their query strings. */
   openedWith: { page: PageName; query?: Record<string, string> }[];
+  /** Every `sendToFrame` call, delivered or not, in order. */
+  frameSends: { tabId: number; frameId: number; documentId?: string; msg: FrameMessage }[];
   /** Main-world snippets run, in order; `mainWorldResult` is what they return. */
   mainWorldCalls: { tabId: number; frameId: number; snippetId: string }[];
   mainWorldResult: (snippetId: string) => unknown;
@@ -78,6 +81,7 @@ export function fakeBackground(): FakeBackground {
     session: new MemoryKV(),
     opened: [],
     openedWith: [],
+    frameSends: [],
     mainWorldCalls: [],
     mainWorldResult: () => undefined,
     contents: new Set(),
@@ -93,11 +97,16 @@ export function fakeBackground(): FakeBackground {
     onInstalled(cb) {
       installedHandlers.push(cb);
     },
-    async sendToFrame(tabId, frameId, msg) {
+    async sendToFrame(tabId, frameId, msg, documentId) {
+      bg.frameSends.push({ tabId, frameId, documentId, msg: structuredClone(msg) });
       const target = [...bg.contents].find(
         (c) => c.sender.tabId === tabId && c.sender.frameId === frameId,
       );
       if (!target) throw new Error(`no content script at tab ${tabId} frame ${frameId}`);
+      // Like Chrome: a message for one document never reaches the one that replaced it.
+      if (documentId !== undefined && target.sender.documentId !== documentId) {
+        throw new Error(`document ${documentId} is not the one in tab ${tabId} frame ${frameId}`);
+      }
       const copy = structuredClone(msg);
       target.inbox.push(copy);
       if (isToContent(copy)) for (const h of target.handlers) h(structuredClone(copy));

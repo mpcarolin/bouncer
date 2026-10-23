@@ -11,6 +11,10 @@ interface ArbState {
 
 const key = (tabId: number) => `arb:${tabId}`;
 
+/** The caller names a page (`documentId`) other than the one on record. */
+const otherPage = (s: ArbState, documentId: string | undefined) =>
+  documentId !== undefined && s.documentId !== null && s.documentId !== documentId;
+
 /**
  * Background-side arbiter (§2b): one owner per tab and page load. Atomicity assumes a single Arbiter instance (one live service worker). Every method is a serialised
  * read-modify-write on `arb:<tabId>`; state lives only in the KV so a restarted service worker
@@ -64,11 +68,15 @@ export class Arbiter {
     });
   }
 
-  /** A top-frame detection gives the page to autoconsent. A child-frame one changes nothing. */
-  cmpDetected(tabId: number, frameId: number): Promise<void> {
+  /**
+   * A top-frame detection gives the page to autoconsent. A child-frame one changes nothing, and
+   * so does one for a page (`documentId`, the top document) other than the one on record.
+   */
+  cmpDetected(tabId: number, frameId: number, documentId?: string): Promise<void> {
     if (frameId !== 0) return Promise.resolve();
     return this.serial(tabId, async () => {
       const s = await this.load(tabId);
+      if (otherPage(s, documentId)) return;
       s.topCmp = true;
       if (s.owner === "none") s.owner = "autoconsent";
       await this.kv.set(key(tabId), s);
@@ -97,10 +105,18 @@ export class Arbiter {
     });
   }
 
-  /** From any frame. Claims for autoconsent if nobody owns the page yet. */
-  popupFound(tabId: number, _frameId: number): Promise<{ sendOptOut: boolean }> {
+  /**
+   * From any frame. Claims for autoconsent if nobody owns the page yet. For a page (`documentId`,
+   * the top document) other than the one on record it changes nothing and refuses as `stale`.
+   */
+  popupFound(
+    tabId: number,
+    _frameId: number,
+    documentId?: string,
+  ): Promise<{ sendOptOut: boolean; reason?: "stale" }> {
     return this.serial(tabId, async () => {
       const s = await this.load(tabId);
+      if (otherPage(s, documentId)) return { sendOptOut: false, reason: "stale" as const };
       if (s.owner === "bouncer") return { sendOptOut: false };
       if (s.owner === "none") {
         s.owner = "autoconsent";

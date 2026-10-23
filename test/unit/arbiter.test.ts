@@ -41,6 +41,19 @@ describe("Arbiter", () => {
     expect((await arb.claimForBouncer(1, "doc-1")).granted).toBe(false);
   });
 
+  it("cmpDetected and popupFound naming another page than the recorded one change nothing", async () => {
+    const { arb } = await setup();
+    await arb.cmpDetected(1, 0, "doc-0");
+    expect(await arb.popupFound(1, 3, "doc-0")).toEqual({ sendOptOut: false, reason: "stale" });
+    expect(await arb.owner(1)).toBe("none");
+    expect(await arb.claimForBouncer(1, "doc-1")).toEqual({ granted: true });
+    // The page on record is matched as before.
+    const { arb: other } = await setup();
+    await other.cmpDetected(1, 0, "doc-1");
+    expect(await other.popupFound(1, 3, "doc-1")).toEqual({ sendOptOut: true });
+    expect(await other.owner(1)).toBe("autoconsent");
+  });
+
   it("a second claim by Bouncer is refused as already", async () => {
     const { arb } = await setup();
     await arb.claimForBouncer(1, "doc-1");

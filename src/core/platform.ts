@@ -29,8 +29,17 @@ export interface BackgroundPlatform {
   session: KV;
   /** Returning undefined replies at once with nothing. */
   onMessage(h: (msg: unknown, from: Sender) => Promise<unknown> | undefined): void;
-  /** To Bouncer's or autoconsent's content script in that frame. Rejects with no receiver. */
-  sendToFrame(tabId: number, frameId: number, msg: FrameMessage): Promise<void>;
+  /**
+   * To Bouncer's or autoconsent's content script in that frame. With `documentId`, only while that
+   * document is the frame's: a message meant for a replaced document never reaches its successor.
+   * Rejects when there is no such receiver.
+   */
+  sendToFrame(
+    tabId: number,
+    frameId: number,
+    msg: FrameMessage,
+    documentId?: string,
+  ): Promise<void>;
   onTabRemoved(cb: (tabId: number) => void): void;
   /** The toolbar icon was clicked. `url` is the active tab's, when the browser exposes it. */
   onActionClicked(cb: (tab: { url?: string }) => void): void;

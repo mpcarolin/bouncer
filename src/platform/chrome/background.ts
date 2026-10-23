@@ -77,9 +77,12 @@ export function chromeBackground(): BackgroundPlatform {
       });
     },
 
-    /** Rejects when the frame has no receiver (navigated away, no content script there). */
-    async sendToFrame(tabId, frameId, msg) {
-      await chrome.tabs.sendMessage(tabId, msg, { frameId });
+    /**
+     * Rejects when the frame has no receiver (navigated away, no content script there), or, with
+     * a `documentId`, when that document is not the frame's any more.
+     */
+    async sendToFrame(tabId, frameId, msg, documentId) {
+      await chrome.tabs.sendMessage(tabId, msg, documentId ? { frameId, documentId } : { frameId });
     },
 
     onTabRemoved(cb) {

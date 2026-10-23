@@ -115,6 +115,18 @@ describe("fake platform", () => {
     expect(handled).toEqual([{ type: "restoreAcStyles" }]);
   });
 
+  it("sendToFrame with a documentId reaches only that document, and records every call", async () => {
+    const bg = fakeBackground();
+    const frame = fakeContent(bg, { tabId: 1, frameId: 0, documentId: "d2" });
+    await bg.sendToFrame(1, 0, { type: "acDetected" }, "d2");
+    await expect(bg.sendToFrame(1, 0, { type: "restoreAcStyles" }, "d1")).rejects.toThrow("d1");
+    expect(frame.inbox).toEqual([{ type: "acDetected" }]);
+    expect(bg.frameSends).toEqual([
+      { tabId: 1, frameId: 0, documentId: "d2", msg: { type: "acDetected" } },
+      { tabId: 1, frameId: 0, documentId: "d1", msg: { type: "restoreAcStyles" } },
+    ]);
+  });
+
   it("restart drops handlers but keeps local and session", async () => {
     const bg = fakeBackground();
     await bg.local.set("k", { a: 1 });

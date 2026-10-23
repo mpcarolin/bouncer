@@ -163,7 +163,7 @@ class World {
    * The service worker is stopped, stays down for `downFor` ms, and starts again: its timers and
    * in-memory state are gone, `local` and `session` are kept.
    */
-  async restart(downFor = 0): Promise<void> {
+  async restart(downFor = 0, wakeBy?: [FakeContent, AcMessage]): Promise<void> {
     this.worker.stop();
     vi.advanceTimersByTime(downFor);
     this.worker = workerClock();
@@ -171,8 +171,19 @@ class World {
     this.arb = new Arbiter(this.bg.session);
     this.log = new DecisionLog(this.bg.local);
     this.host = this.start();
+    // The message that woke the worker is handled in its first turn, before the recovery has read
+    // the stored deadlines.
+    const woken = wakeBy && this.host.handle(wakeBy[1], { ...wakeBy[0].sender });
+    await woken;
     await this.host.ready;
     await this.host.idle();
+  }
+
+  /** What was sent, delivered or not, as [type, frameId, documentId], minus the given types. */
+  sends(...except: FrameMessage["type"][]) {
+    return this.bg.frameSends
+      .filter((x) => !except.includes(x.msg.type))
+      .map((x) => [x.msg.type, x.frameId, x.documentId]);
   }
 
   async setSettings(s: Partial<Settings>): Promise<void> {
@@ -613,6 +624,135 @@ describe("detection ended", () => {
     expect(w.top.inbox).toEqual([]);
     await w.from(w.top, report("done"));
     expect(w.top.inbox).toEqual([{ type: "acDetectionEnded" }]);
+  });
+});
+
+describe("sends bound to a document", () => {
+  it("a deadline that fires after the page was replaced without an init (bfcache) reaches only the old page", async () => {
+    const w = new World();
+    await w.open();
+    await w.from(w.top, popupFound());
+    w.clearInboxes();
+    w.bg.frameSends.length = 0;
+    w.top.sender.documentId = "top-restored"; // back/forward: a cached page, which sends no init
+    await w.wait(AC_OPTOUT_TIMEOUT_MS);
+    expect(await w.entry()).toMatchObject({ outcome: "failed", reason: "opt_out_timeout" });
+    expect(w.sends()).toEqual([
+      ["restoreAcStyles", 0, "top-1"],
+      ["acOutcome", 0, "top-1"],
+    ]);
+    expect(w.top.inbox).toEqual([]); // not for the restored page
+  });
+
+  it("a reloaded page's init, waking a worker after the deadline, ends the old opt-out as navigation and sends the new page nothing", async () => {
+    const w = new World();
+    await w.open();
+    await w.from(w.top, popupFound());
+    w.clearInboxes();
+    w.bg.frameSends.length = 0;
+    w.top.sender.documentId = "top-2";
+    await w.restart(AC_OPTOUT_TIMEOUT_MS + 1, [w.top, init(PAGE)]);
+    expect(await w.entry()).toMatchObject({ outcome: "failed", reason: "navigation" });
+    expect(w.sends()).toEqual([["initResp", 0, "top-2"]]);
+    expect(types(w.top)).toEqual(["initResp"]);
+    expect(await w.bg.session.get("ac:pending")).toEqual([]);
+  });
+
+  it("every reply and notice names the document it is for", async () => {
+    const w = new World();
+    await w.open();
+    await w.from(w.top, cmpDetected());
+    await w.from(w.cmp, popupFound());
+    await w.from(w.cmp, optOutResult(true, true));
+    await w.from(w.cmp, selfTestResult(true));
+    expect(w.sends()).toEqual([
+      ["initResp", 0, "top-1"],
+      ["initResp", 2, "cmp-1"],
+      ["acDetected", 0, "top-1"],
+      ["optOut", 2, "cmp-1"],
+      ["acPopupFound", 0, "top-1"],
+      ["selfTest", 2, "cmp-1"],
+      ["acOutcome", 0, "top-1"],
+    ]);
+  });
+});
+
+describe("the page the host and the arbiter mean", () => {
+  it("a popupFound for a page the arbiter has moved on from is ignored", async () => {
+    const w = new World();
+    await w.open();
+    // The tab moved on, and Bouncer's hello for the new page has reached the arbiter, but
+    // autoconsent's init has not yet reached the host. Then the old page's late messages arrive.
+    w.top.sender.documentId = "top-2";
+    await w.arb.topDocument(TAB, "top-2");
+    await w.from(w.cmp, popupFound());
+    await w.from(w.top, cmpDetected(), { documentId: "top-1" });
+    expect([...w.top.inbox, ...w.cmp.inbox]).toEqual([]);
+    expect(await w.arb.owner(TAB)).toBe("none");
+    expect(await w.log.list()).toEqual([]);
+  });
+
+  it("ignores messages from a frame with no recorded document, such as the previous page's iframe", async () => {
+    const w = new World();
+    await w.open();
+    w.top.sender.documentId = "top-2";
+    await w.from(w.top, init(PAGE)); // the old page's frames are no longer on record
+    w.clearInboxes();
+    await w.from(w.cmp, popupFound()); // late, from the old page's iframe
+    const stranger = fakeContent(w.bg, { tabId: TAB, frameId: 7, documentId: "x", tabUrl: PAGE });
+    await w.from(stranger, popupFound()); // never sent an init
+    expect([...w.top.inbox, ...w.cmp.inbox, ...stranger.inbox]).toEqual([]);
+    expect(await w.arb.owner(TAB)).toBe("none");
+    expect(await w.log.list()).toEqual([]);
+  });
+
+  it("a refused popupFound is logged once per document", async () => {
+    const w = new World();
+    await w.open();
+    await w.arb.claimForBouncer(TAB, "top-1");
+    await w.from(w.cmp, popupFound("onetrust"));
+    await w.from(w.cmp, popupFound("another-rule"));
+    expect((await w.entry()).notes).toEqual(["popupFound after bouncer claim"]);
+  });
+});
+
+describe("failures of its own", () => {
+  it("records the opt-out before sending optOut: if it can't, nothing is sent", async () => {
+    const w = new World();
+    await w.open();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const set = w.bg.session.set.bind(w.bg.session);
+    vi.spyOn(w.bg.session, "set").mockImplementation((k, v) =>
+      k.startsWith("ac:") ? Promise.reject(new Error("quota")) : set(k, v),
+    );
+    await expect(w.host.handle(popupFound(), { ...w.cmp.sender })).rejects.toThrow("quota");
+    await w.host.idle();
+    expect(w.cmp.inbox).toEqual([]);
+  });
+
+  it("a log or settings store that fails doesn't hold back the put-back", async () => {
+    const w = new World();
+    await w.open();
+    await w.from(w.cmp, popupFound());
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(w.bg.local, "get").mockRejectedValue(new Error("disk"));
+    vi.spyOn(w.bg.local, "set").mockRejectedValue(new Error("disk"));
+    await w.from(w.cmp, optOutResult(false));
+    expect(w.cmp.inbox).toEqual([{ type: "optOut" }, { type: "restoreAcStyles" }]);
+    expect(w.top.inbox.at(-1)).toEqual({ type: "acOutcome", outcome: "failed" });
+    expect(error).toHaveBeenCalled();
+  });
+
+  it("progress reports queue no work", async () => {
+    const w = new World();
+    await w.open();
+    const get = vi.spyOn(w.bg.session, "get");
+    for (const l of ["started", "cmpDetected", "openPopupDetected", "runningOptOut"] as const) {
+      await w.from(w.top, report(l, ["onetrust"]));
+    }
+    expect(get).not.toHaveBeenCalled();
+    await w.from(w.top, report("nothingDetected"));
+    expect(get).toHaveBeenCalled();
   });
 });
 

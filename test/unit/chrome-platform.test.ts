@@ -158,6 +158,14 @@ describe("chromeBackground events and actions", () => {
     );
   });
 
+  it("sendToFrame with a documentId passes it beside the frameId", async () => {
+    const fc = installFakeChrome();
+    await chromeBackground().sendToFrame(5, 3, { type: "optOut" }, "doc-7");
+    expect(fc.sent).toEqual([
+      { tabId: 5, msg: { type: "optOut" }, options: { frameId: 3, documentId: "doc-7" } },
+    ]);
+  });
+
   it("onTabRemoved passes the tab id", () => {
     const fc = installFakeChrome();
     const removed: number[] = [];

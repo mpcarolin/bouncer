@@ -57,7 +57,8 @@ export function acConfig(enabled: boolean): AutoconsentConfig {
 type Phase = "optingOut" | "selfTesting" | "timedOut" | "ended";
 
 interface OptOut {
-  entryId: string;
+  /** The log entry; absent if it couldn't be written. */
+  entryId?: string;
   phase: Phase;
   /** Epoch ms, from the injected clock. Set only while `optingOut` or `selfTesting`. */
   deadline?: number;
@@ -69,6 +70,8 @@ interface FrameState {
   documentId: string;
   /** autoconsent opts out at most once per document. */
   optOut?: OptOut;
+  /** The arbiter refused this document's opt-out (Bouncer owns the page); logged once. */
+  refused?: true;
 }
 
 /**
@@ -79,9 +82,30 @@ interface TabState {
   frames: Record<number, FrameState>;
 }
 
+/** One serialised step over a tab: its state, and what of it is in storage. */
+interface Step {
+  tabId: number;
+  tab: TabState;
+  /** The stored state, as JSON, to tell whether a write is needed. */
+  stored: string;
+  /** Whether the tab is listed under `PENDING`. */
+  listed: boolean;
+}
+
 const tabKey = (tabId: number) => `ac:${tabId}`;
 /** The tabs whose state holds a deadline, so a restarted worker can find them. */
 const PENDING = "ac:pending";
+
+/**
+ * The `report` lifecycles that matter here: the end of detection (§2b) and the end of an opt-out
+ * (the re-hide watch). The rest are progress, dropped before they cost a storage read.
+ */
+const NOTABLE_REPORTS = new Set<string>([
+  "nothingDetected",
+  "done",
+  "optOutFailed",
+  "optOutSucceeded",
+]);
 
 const realClock: Clock = {
   now: () => Date.now(),
@@ -111,9 +135,10 @@ const pageUrl = (from: Sender) => from.tabUrl || from.url;
  * one lost with a stopped worker costs nothing: a new host re-arms the stored deadlines (`ready`),
  * and the tab's next message ends an expired one in any case.
  *
- * Messages from a document that is no longer its frame's current one are ignored. A child frame
- * that has sent nothing since the top frame's last `init` has no recorded document, so a late
- * message from the previous page's child frame can't be told apart and is treated as current.
+ * Every autoconsent instance sends `init` before anything else, and that records its frame's
+ * document. A message from any other document (one since replaced, or a previous page's frame)
+ * is ignored. Everything sent names the document it is for, so a message meant for a replaced
+ * document (a timer firing after the page changed) never reaches its successor.
  */
 export class AutoconsentHost {
   private readonly chains = new Map<number, Promise<unknown>>();
@@ -136,20 +161,21 @@ export class AutoconsentHost {
 
   async handle(msg: AcMessage, from: Sender): Promise<void> {
     if (from.tabId < 0) return; // not a page
-    switch (msg.type) {
-      case "eval":
-        // Not queued behind the tab's other steps: autoconsent waits only a second for it.
-        return this.evaluate(msg.id, msg.snippetId, from);
-      case "init":
-        // The page's bookkeeping is queued; the answer, which needs no state, goes out at once.
-        await Promise.all([
-          this.withTab(from.tabId, (tab) => this.newDocument(from, tab)),
-          this.answerInit(msg.url, from),
-        ]);
-        return;
-      default:
-        return this.withTab(from.tabId, (tab) => this.step(msg, from, tab));
+    if (msg.type === "eval") {
+      // Not queued behind the tab's other steps: autoconsent waits only a second for it.
+      return this.evaluate(msg.id, msg.snippetId, from);
     }
+    if (msg.type === "init") {
+      // The document change comes before any deadline is settled, so an old deadline that has
+      // passed ends as `navigation`. The answer, which needs no state, goes out at once.
+      await Promise.all([
+        this.withTab(from.tabId, (s) => this.newDocument(from, s), true),
+        this.answerInit(msg.url, from),
+      ]);
+      return;
+    }
+    if (msg.type === "report" && !NOTABLE_REPORTS.has(msg.state?.lifecycle ?? "")) return;
+    return this.withTab(from.tabId, (s) => this.step(msg, from, s));
   }
 
   /** The tab closed: its pending opt-outs end, and its state goes. */
@@ -169,24 +195,23 @@ export class AutoconsentHost {
 
   // --- steps ---
 
-  private async step(msg: AcMessage, from: Sender, tab: TabState): Promise<void> {
-    const frame = tab.frames[from.frameId];
-    // Sent by a document its frame has since replaced.
-    if (frame && frame.documentId !== from.documentId) return;
+  private async step(msg: AcMessage, from: Sender, s: Step): Promise<void> {
+    const frame = s.tab.frames[from.frameId];
+    if (!frame || frame.documentId !== from.documentId) return; // not the frame's recorded document
     switch (msg.type) {
       case "cmpDetected":
         if (from.frameId !== 0) return; // a child frame's CMP doesn't stop Bouncer's top-frame path
-        await this.arb.cmpDetected(from.tabId, 0);
-        this.send(from.tabId, 0, { type: "acDetected" });
+        await this.arb.cmpDetected(s.tabId, 0, frame.documentId);
+        this.toFrame(s, 0, { type: "acDetected" });
         return;
       case "popupFound":
-        return this.popupFound(msg.cmp, from, tab);
+        return this.popupFound(msg.cmp, from, s, frame);
       case "optOutResult":
-        return this.optOutResult(msg.result === true, msg.scheduleSelfTest === true, from, frame);
+        return this.optOutResult(msg.result === true, msg.scheduleSelfTest === true, s, from);
       case "selfTestResult":
-        return this.selfTestResult(msg.result === true, from, frame);
+        return this.selfTestResult(msg.result === true, s, from.frameId);
       case "report":
-        return this.report(msg.state, from, frame);
+        return this.report(msg.state, s, from.frameId);
       default:
         // visualDelay, optInResult, autoconsentDone, autoconsentError: nothing to do.
         return;
@@ -203,7 +228,7 @@ export class AutoconsentHost {
         result = false;
       }
     }
-    this.send(from.tabId, from.frameId, { type: "evalResp", id, result });
+    this.send(from.tabId, from.frameId, from.documentId, { type: "evalResp", id, result });
   }
 
   private async answerInit(url: string, from: Sender): Promise<void> {
@@ -215,41 +240,49 @@ export class AutoconsentHost {
           compact: await this.lib.filterRules(from.url || url, from.frameId === 0),
         }
       : { autoconsent: [] as [] };
-    this.send(from.tabId, from.frameId, { type: "initResp", rules, config: acConfig(enabled) });
+    this.send(from.tabId, from.frameId, from.documentId, {
+      type: "initResp",
+      rules,
+      config: acConfig(enabled),
+    });
   }
 
   /**
    * autoconsent's `init` opens each document's exchange. (Its constructor sends a `loading` report
-   * just before, which `step` drops as coming from a document not yet recorded for the frame.)
+   * just before, which is dropped as progress.)
    */
-  private async newDocument(from: Sender, tab: TabState): Promise<void> {
+  private async newDocument(from: Sender, s: Step): Promise<void> {
     const { tabId, frameId, documentId } = from;
-    const prev = tab.frames[frameId];
+    const prev = s.tab.frames[frameId];
     if (prev?.documentId !== documentId) {
       if (frameId === 0) {
         // A new page: every frame of the old one has gone with it.
-        await this.endFrames(tabId, tab, "navigation");
-        tab.frames = {};
+        await this.endFrames(tabId, s.tab, "navigation");
+        s.tab.frames = {};
       } else if (prev) {
         await this.endFrame(tabId, frameId, prev, "navigation");
       }
-      tab.frames[frameId] = { documentId };
+      s.tab.frames[frameId] = { documentId };
     }
     // Records the page before autoconsent can claim it, whichever of Bouncer's `hello` and this
     // arrives first. Idempotent for the same document.
     if (frameId === 0) await this.arb.topDocument(tabId, documentId);
   }
 
-  private async popupFound(cmp: string, from: Sender, tab: TabState): Promise<void> {
-    const { tabId, frameId, documentId } = from;
+  private async popupFound(cmp: string, from: Sender, s: Step, frame: FrameState): Promise<void> {
+    const { tabId, frameId } = from;
     // A second matching rule in the same document: autoconsent opts out once, for the first.
-    if (tab.frames[frameId]?.optOut) return;
+    if (frame.optOut || frame.refused) return;
     // Switched off since the page loaded: never opt out.
     if (!enabledFor(await this.settings(), pageUrl(from))) return;
     const now = this.clock.now();
-    const { sendOptOut } = await this.arb.popupFound(tabId, frameId);
+    // The arbiter judges the page this host has on record, not whatever it recorded since.
+    const top = s.tab.frames[0]?.documentId;
+    const { sendOptOut, reason } = await this.arb.popupFound(tabId, frameId, top);
+    if (reason === "stale") return; // the arbiter has moved on to another page
     if (!sendOptOut) {
-      await this.log.add(
+      frame.refused = true;
+      await this.logAdd(
         this.entry(from, cmp, now, {
           outcome: "deferred",
           notes: ["popupFound after bouncer claim"],
@@ -257,81 +290,77 @@ export class AutoconsentHost {
       );
       return;
     }
-    this.send(tabId, frameId, { type: "optOut" });
-    this.send(tabId, 0, { type: "acPopupFound" });
-    const entryId = await this.log.add(
+    // Stored and armed before autoconsent is told to act, so even a worker stopped from here on
+    // ends this opt-out. If it can't be stored, autoconsent is not told.
+    const deadline = now + AC_OPTOUT_TIMEOUT_MS;
+    const optOut: OptOut = { phase: "optingOut", deadline };
+    frame.optOut = optOut;
+    await this.persist(s);
+    this.arm(tabId, frameId, deadline);
+    this.toFrame(s, frameId, { type: "optOut" });
+    this.toFrame(s, 0, { type: "acPopupFound" });
+    optOut.entryId = await this.logAdd(
       this.entry(from, cmp, now, { outcome: "working", t: { found: now } }),
     );
-    const deadline = now + AC_OPTOUT_TIMEOUT_MS;
-    tab.frames[frameId] = { documentId, optOut: { entryId, phase: "optingOut", deadline } };
-    this.arm(tabId, frameId, deadline);
   }
 
   private async optOutResult(
     ok: boolean,
     scheduleSelfTest: boolean,
+    s: Step,
     from: Sender,
-    frame: FrameState | undefined,
   ): Promise<void> {
-    const o = frame?.optOut;
+    const { frameId } = from;
+    const o = s.tab.frames[frameId]?.optOut;
     if (!o) return;
-    const { tabId, frameId } = from;
     const now = this.clock.now();
     if (o.phase === "optingOut") {
-      if (!ok) return this.fail(tabId, frameId, o, "opt_out_failed", false);
+      if (!ok) return this.fail(s, frameId, o, "opt_out_failed", false);
       if (!scheduleSelfTest) {
-        return this.succeed(tabId, frameId, o, "dismissed_unverified", {
+        return this.succeed(s, frameId, o, "dismissed_unverified", {
           verification: "no_self_test",
           t: { gone: now },
         });
       }
       o.phase = "selfTesting";
       o.deadline = now + AC_OPTOUT_TIMEOUT_MS;
-      this.arm(tabId, frameId, o.deadline);
-      this.send(tabId, frameId, { type: "selfTest" });
-      await this.log.patch(o.entryId, { t: { gone: now } });
+      this.arm(s.tabId, frameId, o.deadline);
+      this.toFrame(s, frameId, { type: "selfTest" });
+      await this.logPatch(o, { t: { gone: now } });
       return;
     }
     if (o.phase === "timedOut" && ok) {
       // It finished after all. What it hid stays hidden.
       o.watching = false;
-      return this.succeed(tabId, frameId, o, "dismissed_late", { t: { gone: now } });
+      return this.succeed(s, frameId, o, "dismissed_late", { t: { gone: now } });
     }
     // A late failure: the put-back already happened, and the `report` watch handles any re-hide.
   }
 
-  private async selfTestResult(
-    ok: boolean,
-    from: Sender,
-    frame: FrameState | undefined,
-  ): Promise<void> {
-    const o = frame?.optOut;
+  private async selfTestResult(ok: boolean, s: Step, frameId: number): Promise<void> {
+    const o = s.tab.frames[frameId]?.optOut;
     if (o?.phase !== "selfTesting") return;
-    if (ok) {
-      return this.succeed(from.tabId, from.frameId, o, "dismissed", {
-        verification: "self_test_passed",
-      });
-    }
-    return this.fail(from.tabId, from.frameId, o, "self_test_failed", false);
+    if (ok) return this.succeed(s, frameId, o, "dismissed", { verification: "self_test_passed" });
+    return this.fail(s, frameId, o, "self_test_failed", false);
   }
 
   private async report(
     state: Extract<AcMessage, { type: "report" }>["state"] | undefined,
-    from: Sender,
-    frame: FrameState | undefined,
+    s: Step,
+    frameId: number,
   ): Promise<void> {
     const lifecycle = state?.lifecycle;
     const ended = lifecycle === "nothingDetected" || lifecycle === "done";
-    if (from.frameId === 0 && ended && (state?.detectedCmps ?? []).length === 0) {
+    if (frameId === 0 && ended && (state?.detectedCmps ?? []).length === 0) {
       // Bouncer's own path may stop waiting for autoconsent (§2b).
-      this.send(from.tabId, 0, { type: "acDetectionEnded" });
+      this.toFrame(s, 0, { type: "acDetectionEnded" });
     }
-    const o = frame?.optOut;
+    const o = s.tab.frames[frameId]?.optOut;
     if (!o?.watching) return;
     if (lifecycle === "optOutFailed") {
       // The opt-out ended without success, after autoconsent's `hide` steps may have run again.
       o.watching = false;
-      this.send(from.tabId, from.frameId, { type: "restoreAcStyles" });
+      this.toFrame(s, frameId, { type: "restoreAcStyles" });
     } else if (lifecycle === "done" || lifecycle === "optOutSucceeded") {
       o.watching = false;
     }
@@ -340,46 +369,52 @@ export class AutoconsentHost {
   // --- outcomes ---
 
   private async succeed(
-    tabId: number,
+    s: Step,
     frameId: number,
     o: OptOut,
     outcome: Outcome,
     patch: Partial<LogEntry>,
   ): Promise<void> {
-    this.stop(tabId, frameId, o, "ended");
-    await this.log.patch(o.entryId, { outcome, ...patch });
-    this.send(tabId, 0, { type: "acOutcome", outcome });
+    this.stop(s.tabId, frameId, o, "ended");
+    this.toFrame(s, 0, { type: "acOutcome", outcome });
+    await this.logPatch(o, { outcome, ...patch });
   }
 
   /**
    * Logs `failed` and, if the user wants it put back, removes autoconsent's styles in the frame.
    * `stillRunning`: autoconsent may yet finish (a timeout), so a late result still counts and its
-   * `report`s are watched for a re-hide.
+   * `report`s are watched for a re-hide. The put-back goes out before the log is written, and
+   * neither a failed settings read (the default puts it back) nor a failed write holds it up.
    */
   private async fail(
-    tabId: number,
+    s: Step,
     frameId: number,
     o: OptOut,
     reason: string,
     stillRunning: boolean,
   ): Promise<void> {
-    this.stop(tabId, frameId, o, stillRunning ? "timedOut" : "ended");
-    await this.log.patch(o.entryId, { outcome: "failed", reason });
-    this.send(tabId, 0, { type: "acOutcome", outcome: "failed" });
-    if ((await this.settings()).onFailed !== "restore") return;
-    this.send(tabId, frameId, { type: "restoreAcStyles" });
-    o.watching = stillRunning;
+    this.stop(s.tabId, frameId, o, stillRunning ? "timedOut" : "ended");
+    const restore = await this.settings().then(
+      (x) => x.onFailed === "restore",
+      () => true,
+    );
+    if (restore) {
+      this.toFrame(s, frameId, { type: "restoreAcStyles" });
+      o.watching = stillRunning;
+    }
+    this.toFrame(s, 0, { type: "acOutcome", outcome: "failed" });
+    await this.logPatch(o, { outcome: "failed", reason });
   }
 
   /** The deadline passed (§1, "Bouncer's own opt-out timeout"). */
-  private timeOut(tabId: number, frameId: number, o: OptOut): Promise<void> {
+  private timeOut(s: Step, frameId: number, o: OptOut): Promise<void> {
     if (o.phase === "selfTesting") {
       // The opt-out succeeded; only its check never answered.
-      return this.succeed(tabId, frameId, o, "dismissed_unverified", {
+      return this.succeed(s, frameId, o, "dismissed_unverified", {
         verification: "self_test_unanswered",
       });
     }
-    return this.fail(tabId, frameId, o, "opt_out_timeout", true);
+    return this.fail(s, frameId, o, "opt_out_timeout", true);
   }
 
   /**
@@ -398,9 +433,9 @@ export class AutoconsentHost {
     this.stop(tabId, frameId, o, "ended");
     o.watching = false;
     if (phase === "optingOut") {
-      await this.log.patch(o.entryId, { outcome: "failed", reason });
+      await this.logPatch(o, { outcome: "failed", reason });
     } else if (phase === "selfTesting") {
-      await this.log.patch(o.entryId, {
+      await this.logPatch(o, {
         outcome: "dismissed_unverified",
         verification: "self_test_unanswered",
       });
@@ -427,9 +462,9 @@ export class AutoconsentHost {
       this.timers.delete(k);
       // The timer stands for the deadline, so it ends the opt-out even if the clock reads a hair
       // early. A deadline moved since then would have re-armed (and so cleared) this timer.
-      this.withTab(tabId, async (tab) => {
-        const o = tab.frames[frameId]?.optOut;
-        if (o?.deadline !== undefined) await this.timeOut(tabId, frameId, o);
+      this.withTab(tabId, async (s) => {
+        const o = s.tab.frames[frameId]?.optOut;
+        if (o?.deadline !== undefined) await this.timeOut(s, frameId, o);
       }).catch((e) => report(`failed to end the opt-out in tab ${tabId}`, e));
     }, ms);
     this.timers.set(k, id);
@@ -444,12 +479,12 @@ export class AutoconsentHost {
   }
 
   /** Ends the tab's expired opt-outs, and arms a timer for any deadline that has none here. */
-  private async settleDeadlines(tabId: number, tab: TabState): Promise<void> {
-    for (const [frameId, frame] of frames(tab)) {
+  private async settleDeadlines(s: Step): Promise<void> {
+    for (const [frameId, frame] of frames(s.tab)) {
       const o = frame.optOut;
       if (o?.deadline === undefined) continue;
-      if (o.deadline <= this.clock.now()) await this.timeOut(tabId, frameId, o);
-      else if (!this.timers.has(`${tabId}:${frameId}`)) this.arm(tabId, frameId, o.deadline);
+      if (o.deadline <= this.clock.now()) await this.timeOut(s, frameId, o);
+      else if (!this.timers.has(`${s.tabId}:${frameId}`)) this.arm(s.tabId, frameId, o.deadline);
     }
   }
 
@@ -457,9 +492,9 @@ export class AutoconsentHost {
     const tabs = (await this.p.session.get<number[]>(PENDING)) ?? [];
     await Promise.all(
       tabs.map((tabId) =>
-        this.withTab(tabId, async (tab) => {
+        this.withTab(tabId, async (s) => {
           // Listed but holding none (a worker stopped between the two writes): unlist it.
-          if (!hasDeadline(tab)) await this.setPending(tabId, false);
+          if (!hasDeadline(s.tab)) await this.setPending(tabId, false);
         }),
       ),
     );
@@ -467,20 +502,33 @@ export class AutoconsentHost {
 
   // --- state ---
 
-  /** Runs `fn` on the tab's state as one serialised step, after settling its deadlines. */
-  private withTab(tabId: number, fn: (tab: TabState) => Promise<void>): Promise<void> {
+  /**
+   * Runs `fn` on the tab's state as one serialised step, with its expired deadlines settled first
+   * (or, with `settleAfter`, once `fn` is done), and stores the result.
+   */
+  private withTab(tabId: number, fn: (s: Step) => Promise<void>, settleAfter = false) {
     return this.serial(tabId, async () => {
       const tab = await this.load(tabId);
-      const before = JSON.stringify(tab);
-      const wasPending = hasDeadline(tab);
-      await this.settleDeadlines(tabId, tab);
-      await fn(tab);
-      if (JSON.stringify(tab) === before) return;
-      const pending = hasDeadline(tab);
-      // The index first: a worker stopped between the writes leaves at most a stale listing.
-      if (pending !== wasPending) await this.setPending(tabId, pending);
-      await this.p.session.set(tabKey(tabId), tab);
+      const s: Step = { tabId, tab, stored: JSON.stringify(tab), listed: hasDeadline(tab) };
+      if (!settleAfter) await this.settleDeadlines(s);
+      await fn(s);
+      if (settleAfter) await this.settleDeadlines(s);
+      await this.persist(s);
     });
+  }
+
+  /** Stores the step's state if it changed, and lists or unlists the tab under `PENDING`. */
+  private async persist(s: Step): Promise<void> {
+    const json = JSON.stringify(s.tab);
+    if (json === s.stored) return;
+    const pending = hasDeadline(s.tab);
+    // The listing first: a worker stopped between the writes leaves at most a stale listing.
+    if (pending !== s.listed) {
+      await this.setPending(s.tabId, pending);
+      s.listed = pending;
+    }
+    await this.p.session.set(tabKey(s.tabId), s.tab);
+    s.stored = json;
   }
 
   private async load(tabId: number): Promise<TabState> {
@@ -511,12 +559,37 @@ export class AutoconsentHost {
 
   // --- helpers ---
 
+  /** To the frame's recorded document; nothing if the frame has none on record. */
+  private toFrame(s: Step, frameId: number, msg: FrameMessage): void {
+    const documentId = s.tab.frames[frameId]?.documentId;
+    if (documentId !== undefined) this.send(s.tabId, frameId, documentId, msg);
+  }
+
   /**
    * Not awaited: autoconsent's listener answers `optOut` and `selfTest` only once it has acted.
-   * A frame with no receiver (gone, or never given Bouncer's script) is not an error here.
+   * A frame with no receiver (gone, replaced, or never given Bouncer's script) is not an error.
    */
-  private send(tabId: number, frameId: number, msg: FrameMessage): void {
-    this.p.sendToFrame(tabId, frameId, msg).catch(() => {});
+  private send(tabId: number, frameId: number, documentId: string, msg: FrameMessage): void {
+    this.p.sendToFrame(tabId, frameId, msg, documentId).catch(() => {});
+  }
+
+  /** The decision log is a record, not a gate: a failed write never stops an opt-out or a put-back. */
+  private async logAdd(e: Omit<LogEntry, "id">): Promise<string | undefined> {
+    try {
+      return await this.log.add(e);
+    } catch (err) {
+      report("failed to log an autoconsent decision", err);
+      return undefined;
+    }
+  }
+
+  private async logPatch(o: OptOut, patch: Partial<LogEntry>): Promise<void> {
+    if (o.entryId === undefined) return;
+    try {
+      await this.log.patch(o.entryId, patch);
+    } catch (err) {
+      report("failed to log an autoconsent outcome", err);
+    }
   }
 
   private entry(
