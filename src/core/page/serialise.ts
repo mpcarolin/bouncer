@@ -183,3 +183,11 @@ export function serialise(
   }
   return { banner: { text: cap(textOf(c.el), BANNER_TEXT_CHARS), controls }, elements };
 }
+
+/**
+ * The visible part of a `hiddenToggles` serialisation: what a plain one gives, with the same ids.
+ * What stage 1's gate, labeller and chooser see.
+ */
+export function shownOnly(s: Serialised): Serialised {
+  return { ...s, banner: { ...s.banner, controls: s.banner.controls.filter((c) => !c.hidden) } };
+}

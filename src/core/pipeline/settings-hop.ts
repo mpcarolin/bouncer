@@ -1,6 +1,7 @@
 // §2f.2 save with toggles, and §2f.3's settings hop: click settings, find the panel that opens,
 // hide it, and refuse there by reject or by save with toggles. One hop at most: once settings
-// has been clicked, a panel that offers anything else ends `failed`.
+// has been clicked, a panel that offers anything else ends `failed`. A learned rule's replay
+// (replay.ts) acts through the same steps.
 import {
   type ChooseOpts,
   type Corroboration,
@@ -8,7 +9,9 @@ import {
   MODEL_REASONS,
   toggleChanges,
 } from "../choose.ts";
+import { PANEL_WAIT_MS } from "../config.ts";
 import { labelDeterministic, mergeAiLabels } from "../label.ts";
+import { type LearnedStage, type RecordedFlow, recordStage, type Stage2 } from "../learned.ts";
 import type { ClickResult } from "../page/click.ts";
 import { clickability } from "../page/clickable.ts";
 import { hashText } from "../page/detect.ts";
@@ -16,8 +19,8 @@ import { textOf } from "../page/dom.ts";
 import type { Hider } from "../page/hide.ts";
 import { findPanel, snapshotRendered } from "../page/panel.ts";
 import { type Serialised, serialise } from "../page/serialise.ts";
-import { readToggle, recheck, setToggles, type ToggleTarget } from "../page/toggles.ts";
-import type { Control, Decision, Label, SerialisedBanner } from "../types.ts";
+import { readToggle, recheck, setToggles } from "../page/toggles.ts";
+import type { Control, Decision, Label, Outcome, SerialisedBanner } from "../types.ts";
 import { stillSame } from "./page-checks.ts";
 
 export type SaveDecision = Extract<Decision, { kind: "save" }>;
@@ -42,15 +45,27 @@ export interface Actions {
   toggled(t: { text: string; to: boolean }[]): void;
 }
 
-/** Every toggle-optional off and every toggle-optout on: what §2f.2's re-read must find. */
-function wantedStates(s: Serialised): ToggleTarget[] {
+/** A toggle §2f.2 must leave in a state: a toggle-optional off, a toggle-optout on. */
+export interface WantedToggle {
+  id: number;
+  el: Element;
+  text: string;
+  label: "toggle-optional" | "toggle-optout";
+  to: boolean;
+}
+
+/**
+ * Every toggle-optional off and every toggle-optout on that `s` exposes, hidden ones included:
+ * what §2f.2's re-read must find, and the target states a learned rule keeps.
+ */
+export function wantedToggles(s: Serialised): WantedToggle[] {
   const labels = labelDeterministic(s.banner);
-  return s.banner.controls.flatMap((c): ToggleTarget[] => {
+  return s.banner.controls.flatMap((c): WantedToggle[] => {
     const el = s.elements.get(c.id);
     const label = labels.get(c.id)?.label;
     if (c.role !== "toggle" || !el) return [];
-    if (label === "toggle-optional") return [{ el, to: false }];
-    if (label === "toggle-optout") return [{ el, to: true }];
+    if (label === "toggle-optional") return [{ id: c.id, el, text: c.text, label, to: false }];
+    if (label === "toggle-optout") return [{ id: c.id, el, text: c.text, label, to: true }];
     return [];
   });
 }
@@ -75,7 +90,7 @@ export function applySave(d: SaveDecision, s: Serialised, container: Element): S
   });
   if (!set.ok) return { result: set.reason, switched };
   const again = serialise({ el: container }, clickability, { hiddenToggles: true });
-  const ok = recheck(wantedStates(s)) && recheck(wantedStates(again));
+  const ok = recheck(wantedToggles(s)) && recheck(wantedToggles(again));
   return { result: ok ? "ok" : "recheck_failed", switched };
 }
 
@@ -93,7 +108,7 @@ export function withHiddenToggles(d: SaveDecision, full: Serialised): SaveDecisi
 }
 
 /** Clicks control `id` of `s` if it still reads as it did when `container` was serialised (§0). */
-function clickTarget(
+export function clickTarget(
   s: Serialised,
   id: number,
   container: Element,
@@ -130,6 +145,23 @@ export function saveWithToggles(
   );
   if (result !== "ok") return { ok: false, reason: result };
   return clickTarget(s, d.target, container, aiOnly, act);
+}
+
+/**
+ * The stage that `d` acts out in `container` (serialised as `s`), recorded for a learned rule
+ * before it acts: its target, and for a save the target state of every toggle-optional and
+ * toggle-optout. Undefined when it can't be recorded.
+ */
+export function recordDecision<A extends LearnedStage["action"]>(
+  container: Element,
+  s: Serialised,
+  d: { kind: A; target: number },
+) {
+  const el = s.elements.get(d.target);
+  const control = s.banner.controls.find((c) => c.id === d.target);
+  if (!el || !control) return undefined;
+  const toggles = d.kind === "save" ? wantedToggles(s) : [];
+  return recordStage(container, d.kind, { el, text: control.text }, toggles);
 }
 
 export interface HopDeps extends Actions {
@@ -170,22 +202,31 @@ export interface HopContext {
 /**
  * How the hop ended. `ok`: the panel's reject or save was clicked, and both the banner and
  * `panel` are left for §2g's verification, with `panelKey` (the panel's text hash at the last
- * click) for spotting it put back. Otherwise the reason it is `failed`, and the panel if found.
+ * click) for spotting it put back, and stage 2 as recorded for a learned rule when it could be.
+ * Otherwise the reason it is `failed`, and the panel if found.
  */
 export type HopResult =
-  | { ok: true; panel: Element; panelKey: string }
+  | { ok: true; panel: Element; panelKey: string; stage2?: Stage2 }
   | { ok: false; reason: string; panel?: Element };
 
 /**
- * §2f.3: click settings, wait for the panel, hide it, then label (no gate), decide with
- * `allowSettings: false` and refuse in it. Never throws once the panel is found.
+ * Stage 2, in the panel the settings click opened and already hidden: decide there and refuse.
+ * `until` is when §2f.3's window, counted from the settings click, closes.
  */
-export async function settingsHop(ctx: HopContext): Promise<HopResult> {
+export type Refuse = (panel: Element, ctx: HopContext, until: number) => Promise<HopResult>;
+
+/**
+ * §2f.3: click settings, wait for the panel, hide it, then refuse in it. By default that is
+ * labelling (no gate), deciding with `allowSettings: false`, and acting; a learned rule's replay
+ * passes its own `refuse`. Never throws once the panel is found.
+ */
+export async function settingsHop(ctx: HopContext, refuse: Refuse = decideIn): Promise<HopResult> {
   const { deps } = ctx;
   // What is visible now, so a newly shown panel can be told apart.
   const before = snapshotRendered(deps.doc);
   const opened = clickTarget(ctx.ser, ctx.target, ctx.banner, ctx.aiOnly, deps);
   if (!opened.ok) return opened;
+  const until = performance.now() + (deps.panel?.waitMs ?? PANEL_WAIT_MS);
 
   const found = await findPanel({
     banner: ctx.banner,
@@ -197,19 +238,40 @@ export async function settingsHop(ctx: HopContext): Promise<HopResult> {
   if ("failed" in found) return { ok: false, reason: `panel_${found.failed}` };
   const panel = found.panel;
   try {
-    return await refuseIn(panel, ctx);
+    if (deps.stopped()) return { ok: false, reason: "stopped", panel };
+    if (panel !== ctx.banner) deps.hider.hide(panel, panel.getRootNode() as Document | ShadowRoot);
+    return await refuse(panel, ctx, until);
   } catch (e) {
     deps.note(`exception:${e instanceof Error ? e.message : String(e)}`);
     return { ok: false, reason: "exception", panel };
   }
 }
 
-/** Stage 2 in the panel that the settings click opened. */
-async function refuseIn(panel: Element, { banner, deps }: HopContext): Promise<HopResult> {
-  const fail = (reason: string): HopResult => ({ ok: false, reason, panel });
-  if (deps.stopped()) return fail("stopped");
-  if (panel !== banner) deps.hider.hide(panel, panel.getRootNode() as Document | ShadowRoot);
+/** A refusal in the panel: what stage 2 may click. */
+export type PanelRefusal = Extract<Decision, { kind: "reject" }> | SaveDecision;
 
+/**
+ * Stage 2's last step, whoever decided it: refuse in `panel` (which `s` serialises) by `d`, with
+ * the same checks at click time.
+ */
+export function refuseInPanel(
+  panel: Element,
+  s: Serialised,
+  d: PanelRefusal,
+  aiOnly: boolean,
+  deps: HopDeps,
+): HopResult {
+  const panelKey = hashText(textOf(panel));
+  const done =
+    d.kind === "reject"
+      ? clickTarget(s, d.target, panel, aiOnly, deps)
+      : saveWithToggles(d, s, panel, aiOnly, deps);
+  return done.ok ? { ok: true, panel, panelKey } : { ok: false, reason: done.reason, panel };
+}
+
+/** The hop's own stage 2: label the panel, decide, and refuse, recording what a rule needs. */
+async function decideIn(panel: Element, { deps }: HopContext): Promise<HopResult> {
+  const fail = (reason: string): HopResult => ({ ok: false, reason, panel });
   const ser = serialise({ el: panel }, clickability, { hiddenToggles: true });
   const det = labelDeterministic(ser.banner);
   const unlabelled = ser.banner.controls
@@ -236,10 +298,30 @@ async function refuseIn(panel: Element, { banner, deps }: HopContext): Promise<H
   if (d.kind !== "reject" && d.kind !== "save") return fail("panel_no_refusal");
   if (deps.stopped()) return fail("stopped");
 
-  const panelKey = hashText(textOf(panel));
-  const done =
-    d.kind === "reject"
-      ? clickTarget(ser, d.target, panel, res.aiOnlyClick, deps)
-      : saveWithToggles(d, ser, panel, res.aiOnlyClick, deps);
-  return done.ok ? { ok: true, panel, panelKey } : fail(done.reason);
+  // Nothing is learned from an AI-only click, so there is nothing to record for one.
+  const stage2 = res.aiOnlyClick ? undefined : recordDecision(panel, ser, d);
+  const done = refuseInPanel(panel, ser, d, res.aiOnlyClick, deps);
+  return done.ok && stage2 ? { ...done, stage2 } : done;
+}
+
+/**
+ * How a flow's actions went. `ok`: every click was made, and the banner (and `panel`, after a
+ * hop) are left for §2g's verification, with `panelKey` for spotting the panel put back, and
+ * `flow` when the flow was recorded for a learned rule. Otherwise why it is `failed`.
+ */
+export type Performed =
+  | { ok: true; panel?: Element; panelKey?: string; flow?: RecordedFlow }
+  | { ok: false; reason: string; panel?: Element };
+
+/**
+ * What the own path carries out once it has claimed the page and hidden the banner: the
+ * chooser's decision, or a learned rule's replay. The claim, the hiding, §2g's verification and
+ * the ending are the own path's, and the same for both.
+ */
+export interface Plan {
+  /** The stage-1 target still reads as it did when it was chosen or checked. */
+  fresh(): boolean;
+  perform(deps: HopDeps): Promise<Performed>;
+  /** The outcome once §2g verifies the dismissal. */
+  dismissed: Outcome;
 }

@@ -1,11 +1,19 @@
-// Bouncer's own path (§2a–g), in the top frame: watch for candidates, gate each with the AI,
-// label and choose deterministically, claim the page from the background's arbiter, then hide,
-// act (a click, a save with toggles, or the settings hop of settings-hop.ts), verify, unlock
-// scroll and log. One terminal decision per page.
+// Bouncer's own path (§2a–h), in the top frame: watch for candidates, try the site's learned
+// rule (replay.ts) or else gate each with the AI, label and choose deterministically, claim the
+// page from the background's arbiter, then hide, act (a click, a save with toggles, or the
+// settings hop of settings-hop.ts), verify, unlock scroll, log, and learn from a verified
+// deterministic refusal. One terminal decision per page.
 import type { AiProvider, AiResult, AiStatus } from "../ai.ts";
 import { type ChooseOpts, choose, type Corroboration, decide, MODEL_REASONS } from "../choose.ts";
 import { CLAIM_WAIT_MS } from "../config.ts";
 import { labelDeterministic, mergeAiLabels } from "../label.ts";
+import {
+  isLearnedRule,
+  type LearnedRule,
+  learnable,
+  type RecordedFlow,
+  recordRule,
+} from "../learned.ts";
 import type { LogEntry } from "../log.ts";
 import type { ReplyOf, ToBackground, ToContent } from "../messages.ts";
 import { type ClickResult, captureFocus, NavigationWatch, safeClick } from "../page/click.ts";
@@ -14,7 +22,7 @@ import { type Candidate, CandidateWatcher } from "../page/detect.ts";
 import { isVisible } from "../page/dom.ts";
 import { Hider } from "../page/hide.ts";
 import { ScrollTracker } from "../page/scroll.ts";
-import { type Serialised, serialise } from "../page/serialise.ts";
+import { type Serialised, serialise, shownOnly } from "../page/serialise.ts";
 import { isGoneBySite, verifyDismissed } from "../page/verify.ts";
 import type { ContentPlatform } from "../platform.ts";
 import { type Settings, siteOf } from "../settings.ts";
@@ -35,9 +43,13 @@ import {
   reappeared,
   stillSame,
 } from "./page-checks.ts";
+import { replay } from "./replay.ts";
 import {
   type Actions,
   type HopDeps,
+  type Performed,
+  type Plan,
+  recordDecision,
   saveWithToggles,
   settingsHop,
   withHiddenToggles,
@@ -60,6 +72,8 @@ export interface PageDeps {
   verify?: { goneMs?: number; stayMs?: number };
   /** §2f.3's wait for the settings panel; PANEL_WAIT_MS by default. For tests. */
   panel?: { waitMs?: number; pollMs?: number };
+  /** The site's learned rule, from `hello`: tried on each candidate before the pipeline (§2h). */
+  learnedRule?: LearnedRule;
 }
 
 type Draft = Omit<LogEntry, "id">;
@@ -76,6 +90,8 @@ interface Ending {
 /** A decision ready to act on, or an ending reached without one. */
 type Verdict = { decision: Decision; aiOnly: boolean } | { end: Ending };
 
+type Targeted = Extract<Decision, { target: number }>;
+
 /** One candidate's run through the pipeline. */
 interface Run {
   c: Candidate;
@@ -87,6 +103,12 @@ interface Run {
   restoreFocus?: (touched: Element[]) => void;
   /** The `log` sent when the claim was granted; the ending is patched onto it. */
   logged?: Promise<string | undefined>;
+  /** What the flow did, recorded as it acted, for a learned rule (§2h). */
+  flow?: RecordedFlow;
+  /** The learned rule was replayed on this candidate. */
+  replayed?: true;
+  /** The learned rule's stage-1 check failed on this candidate, for this reason. */
+  mismatch?: string;
 }
 
 const realClock: Clock = {
@@ -131,11 +153,6 @@ const modelEnding = (r: AiResult<unknown>): Ending => ({
   outcome: "unsure",
   reason: r.kind === "timeout" ? "model_timeout" : "model_error",
 });
-
-/** The visible part of a `hiddenToggles` serialisation: what a plain one gives, same ids. */
-function shownOnly(s: Serialised): Serialised {
-  return { ...s, banner: { ...s.banner, controls: s.banner.controls.filter((c) => !c.hidden) } };
-}
 
 /**
  * What the chooser would have clicked if controls that navigate or submit were clickable, when
@@ -189,10 +206,15 @@ export class OwnPath {
   private acUnlockTried = false;
   /** The page's one `model_unavailable` entry has been logged. */
   private unavailableLogged = false;
+  /** The site's learned rule, until it is discarded (§2h). */
+  private rule: LearnedRule | undefined;
 
   constructor(private readonly d: PageDeps) {
     this.clock = d.clock ?? realClock;
     this.scroll = d.scroll ?? new ScrollTracker(d.doc);
+    const rule = d.learnedRule;
+    // Checked again here: a rule acts without the gate, so only a well-formed one for this site.
+    if (isLearnedRule(rule) && rule.site === siteOf(d.win.location.href)) this.rule = rule;
     this.done = new Promise((resolve) => {
       this.resolveDone = resolve;
     });
@@ -346,17 +368,49 @@ export class OwnPath {
     const full = serialise(r.c, clickability, { hiddenToggles: true });
     const ser = shownOnly(full);
     // §2b: wait up to CLAIM_WAIT_MS from finding the candidate, unless autoconsent's detection
-    // ends first. The model calls run during the wait.
+    // ends first. The model calls run during the wait; a replay makes none, but waits all the same.
     const waited = this.claimWait();
+    const settled = async (): Promise<Ending | undefined> => {
+      await waited;
+      if (this.stopped) return { outcome: "deferred", reason: "stopped" };
+      if (this.acDetected) return { outcome: "deferred", reason: "autoconsent_detected" };
+      return undefined;
+    };
+
+    if (this.rule) {
+      const res = await replay(this.rule, {
+        banner: r.c.el,
+        full,
+        act: async (plan) => {
+          r.replayed = true;
+          r.entry.path = "learned";
+          r.entry.gate = "skipped";
+          r.entry.labels = Object.fromEntries(
+            [...labelDeterministic(ser.banner)].filter(
+              (kv): kv is [number, Labelled] => kv[1] !== null,
+            ),
+          );
+          r.entry.t.decided = this.clock.now();
+          return (await settled()) ?? this.act(r, plan);
+        },
+      });
+      if (res.outcome !== "discard_and_run_pipeline") return res;
+      // Nothing touched: the full pipeline decides on this candidate. Whether the rule goes
+      // depends on what the candidate turns out to be (see `keepRules`).
+      r.mismatch = res.reason;
+      r.entry.notes.push(`learned:mismatch:${res.reason}`);
+    }
+
     const v = await this.verdict(r, ser.banner);
     r.entry.t.decided = this.clock.now();
     if ("end" in v && !isTerminal(v.end.outcome)) return v.end;
     // Every page ending waits too, so autoconsent detecting the page in time means `deferred`.
-    await waited;
-    if (this.stopped) return { outcome: "deferred", reason: "stopped" };
-    if (this.acDetected) return { outcome: "deferred", reason: "autoconsent_detected" };
+    const stood = await settled();
+    if (stood) return stood;
     if ("end" in v) return v.end;
-    return this.act(r, ser, full, v.decision, v.aiOnly);
+    const d = v.decision;
+    if (!("target" in d)) return { outcome: "unsure", reason: "unexpected_decision" };
+    return this.act(r, this.decided(r, ser, full, d, v.aiOnly));
   }
 
   /** §2c–f: the fast path when the model is unavailable, else the gate, labelling and chooser. */
@@ -431,22 +485,11 @@ export class OwnPath {
   }
 
   /**
-   * §2b, §2f, §2g: claim, hide, act, verify. `full` is the banner serialised with its hidden
-   * toggles, for a save; `ser` is its visible part, what the decision was made on.
+   * §2b, §2f, §2g: claim, hide, act, verify, for a decision of the chooser's or a learned rule's
+   * replay alike.
    */
-  private async act(
-    r: Run,
-    ser: Serialised,
-    full: Serialised,
-    d: Decision,
-    aiOnly: boolean,
-  ): Promise<Ending> {
-    if (!("target" in d)) return { outcome: "unsure", reason: "unexpected_decision" };
-    const el = ser.elements.get(d.target);
-    const control = ser.banner.controls.find((c) => c.id === d.target);
-    if (!el || !control || !stillSame(r.c, ser, d.target)) {
-      return { outcome: "unsure", reason: "stale_target" };
-    }
+  private async act(r: Run, plan: Plan): Promise<Ending> {
+    if (!plan.fresh()) return { outcome: "unsure", reason: "stale_target" };
 
     const claim = await this.send({ type: "claim" });
     if (!claim) return { outcome: "deferred", reason: "claim_unanswered" };
@@ -455,7 +498,7 @@ export class OwnPath {
     r.logged = this.log({ ...r.entry, outcome: "working" });
     if (this.stopped) return { outcome: "unsure", reason: "stopped" };
     // The site may have re-rendered the banner while the claim was out.
-    if (!stillSame(r.c, ser, d.target)) return { outcome: "unsure", reason: "stale_target" };
+    if (!plan.fresh()) return { outcome: "unsure", reason: "stale_target" };
 
     this.scroll.freeze();
     r.restoreFocus = captureFocus(this.d.doc);
@@ -463,32 +506,52 @@ export class OwnPath {
     r.acted = true;
     this.hider.hide(r.c.el, r.c.root);
     this.scroll.markAction();
-    const actions = this.actions(r);
+    const done = await plan.perform(this.hopDeps(r, this.actions(r)));
+    if (done.panel) r.panel = done.panel;
+    if (!done.ok) return { outcome: "failed", reason: done.reason };
+    r.flow = done.flow;
+
     // The texts whose return as a new element means the site put the banner (or panel) back.
     const keys = new Set([r.c.key]);
-    if (d.kind === "settings") {
-      const hop = await settingsHop({
-        banner: r.c.el,
-        ser,
-        target: d.target,
-        aiOnly,
-        deps: this.hopDeps(r, actions),
-      });
-      if (hop.panel) r.panel = hop.panel;
-      if (!hop.ok) return { outcome: "failed", reason: hop.reason };
-      keys.add(hop.panelKey);
-    } else if (d.kind === "save") {
-      const saved = saveWithToggles(withHiddenToggles(d, full), full, r.c.el, aiOnly, actions);
-      if (!saved.ok) return { outcome: "failed", reason: saved.reason };
-    } else {
-      const click = actions.click(el, control, aiOnly);
-      if (!click.ok) return { outcome: "failed", reason: click.reason };
-    }
-
+    if (done.panelKey !== undefined) keys.add(done.panelKey);
     const v = await this.verify(r, keys);
     r.entry.verification = v.ok ? "verified" : v.reason;
     if (!v.ok) return { outcome: "failed", reason: v.reason };
-    return { outcome: DISMISSED_AS[d.kind] };
+    return { outcome: plan.dismissed };
+  }
+
+  /**
+   * The chooser's decision as a plan. `full` is the banner serialised with its hidden toggles,
+   * for a save; `ser` is its visible part, what the decision was made on. A deterministic
+   * refusal is recorded as it acts, so it can be learned if it is verified (§2h).
+   */
+  private decided(r: Run, ser: Serialised, full: Serialised, d: Targeted, aiOnly: boolean): Plan {
+    const banner = r.c.el;
+    return {
+      fresh: () => stillSame(r.c, ser, d.target),
+      dismissed: DISMISSED_AS[d.kind],
+      perform: async (deps): Promise<Performed> => {
+        if (d.kind === "settings") {
+          const stage1 = aiOnly ? undefined : recordDecision(banner, ser, d);
+          const hop = await settingsHop({ banner, ser, target: d.target, aiOnly, deps });
+          if (!hop.ok) return hop;
+          const flow = stage1 && hop.stage2 && { stage1, stage2: hop.stage2 };
+          return { ok: true, panel: hop.panel, panelKey: hop.panelKey, flow };
+        }
+        if (d.kind === "save") {
+          const stage1 = aiOnly ? undefined : recordDecision(banner, full, d);
+          const saved = saveWithToggles(withHiddenToggles(d, full), full, banner, aiOnly, deps);
+          return saved.ok ? { ok: true, flow: stage1 && { stage1 } } : saved;
+        }
+        const el = ser.elements.get(d.target);
+        const control = ser.banner.controls.find((c) => c.id === d.target);
+        if (!el || !control) return { ok: false, reason: "stale_target" };
+        const stage1 = d.kind === "reject" && !aiOnly ? recordDecision(banner, ser, d) : undefined;
+        const click = deps.click(el, control, aiOnly);
+        if (!click.ok) return { ok: false, reason: click.reason ?? "navigation" };
+        return { ok: true, flow: stage1 && { stage1 } };
+      },
+    };
   }
 
   /** Every click goes through `safeClick` with its own `NavigationWatch`, and into the log. */
@@ -622,11 +685,38 @@ export class OwnPath {
       this.unavailableLogged = true;
     }
 
+    await this.keepRules(r);
     const entry = { ...r.entry, notes: [...r.entry.notes] };
     let id = r.logged ? await r.logged : undefined;
     if (id !== undefined) await this.send({ type: "logPatch", id, patch: entry });
     else id = await this.log(entry);
     if (terminal) this.resolveDone({ ...entry, id: id ?? "" });
+  }
+
+  /**
+   * §2h, once the outcome is final. A failed replay discards its rule. A stage-1 mismatch does too
+   * once the pipeline took that candidate for the consent banner (the gate said so, or the fast
+   * path acted on it): a login wall or chat widget seen first, or a candidate the model could not
+   * judge, leaves the rule for the banner after it or the next visit. A verified deterministic
+   * refusal is learned, after any discard, so it replaces the old rule.
+   */
+  private async keepRules(r: Run): Promise<void> {
+    const { site, outcome } = r.entry;
+    try {
+      const wasBanner = r.entry.gate === "consent" || r.acted;
+      const stale = r.replayed ? outcome === "failed" : r.mismatch !== undefined && wasBanner;
+      if (this.rule && stale) {
+        this.rule = undefined;
+        await this.send({ type: "discardRule", site });
+        r.entry.notes.push("learned:discarded");
+      }
+      if (r.flow && site && learnable(r.entry)) {
+        await this.send({ type: "saveRule", rule: recordRule(site, r.flow, this.clock.now()) });
+        r.entry.notes.push("learned:saved");
+      }
+    } catch (e) {
+      r.entry.notes.push(`learned:${message(e)}`);
+    }
   }
 
   // --- the background ---

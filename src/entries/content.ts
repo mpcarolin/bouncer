@@ -56,6 +56,7 @@ async function topFrame(): Promise<void> {
     platform: page,
     ai: new RemoteAiProvider(platform),
     settings: hello.settings,
+    learnedRule: hello.learnedRule,
     scroll,
   }).start();
 }

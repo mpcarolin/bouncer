@@ -4,6 +4,7 @@ import { MockProvider } from "../../src/ai/mock/provider.ts";
 import type { AiProvider, AiResult, AiStatus } from "../../src/core/ai.ts";
 import { RemoteAiProvider } from "../../src/core/ai-remote.ts";
 import { type BackgroundApp, startBackground } from "../../src/core/background-app.ts";
+import type { LearnedRule } from "../../src/core/learned.ts";
 import type { LogEntry } from "../../src/core/log.ts";
 import { OwnPath } from "../../src/core/pipeline/own-path.ts";
 import type { ContentPlatform } from "../../src/core/platform.ts";
@@ -116,6 +117,8 @@ export interface StartOpts {
   platform?: (content: FakeContent) => ContentPlatform;
   /** The pipeline's AI, in place of `RemoteAiProvider` over the fake background. */
   ai?: AiProvider;
+  /** Learned rules the background holds before `hello`, as if from an earlier visit. */
+  rules?: LearnedRule[];
 }
 
 const teardown: (() => void)[] = [];
@@ -139,9 +142,12 @@ export async function start(o: StartOpts = {}): Promise<Harness> {
   const bg = fakeBackground();
   const provider = o.provider ?? new Counting();
   const app = startBackground(bg, provider);
-  const content = fakeContent(bg);
-  // The content entry's hello: it records the page with the arbiter, so a claim can be granted.
-  await content.send({ type: "hello" });
+  for (const r of o.rules ?? []) await app.rules.put(r);
+  // The test page's own URL, so the background names the same site the pipeline does.
+  const content = fakeContent(bg, { url: location.href });
+  // The content entry's hello: it records the page with the arbiter, so a claim can be granted,
+  // and hands the pipeline the site's learned rule.
+  const hello = await content.send({ type: "hello" });
   await o.before?.({ bg, app, content });
 
   const clicks: Element[] = [];
@@ -169,6 +175,7 @@ export async function start(o: StartOpts = {}): Promise<Harness> {
     platform: o.platform?.(content) ?? content,
     ai: o.ai ?? new RemoteAiProvider(content),
     settings: { ...DEFAULT_SETTINGS, ...o.settings },
+    learnedRule: hello?.learnedRule,
     clock: fastClock,
     verify: VERIFY,
     panel: PANEL,

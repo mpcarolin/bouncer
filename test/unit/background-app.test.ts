@@ -3,6 +3,7 @@ import type { AiMeta, AiProvider } from "../../src/core/ai.ts";
 import type { AcLib } from "../../src/core/autoconsent-bg.ts";
 import { startBackground } from "../../src/core/background-app.ts";
 import { MAX_MODEL_CALLS_PER_PAGE } from "../../src/core/config.ts";
+import type { LearnedRule } from "../../src/core/learned.ts";
 import type { LogEntry } from "../../src/core/log.ts";
 import { DEFAULT_SETTINGS, saveSettings } from "../../src/core/settings.ts";
 import type { SerialisedBanner } from "../../src/core/types.ts";
@@ -127,7 +128,7 @@ describe("hello", () => {
     expect(await embedded.send({ type: "hello" })).toMatchObject({ enabled: true });
   });
 
-  it("replies with the settings, the verdict for the sender's URL, and no learned rule yet", async () => {
+  it("replies with the settings, the verdict for the sender's URL, and no learned rule when none is stored", async () => {
     const { bg } = started();
     await saveSettings(bg.local, { ...DEFAULT_SETTINGS, disabledSites: ["off.example"] });
     const on = await fakeContent(bg, { url: "https://on.example/page" }).send({ type: "hello" });
@@ -386,12 +387,79 @@ describe("log and logPatch", () => {
 });
 
 describe("saveRule and discardRule", () => {
-  // Stubs until Task 20 (learned rules): they acknowledge and store nothing.
-  it("reply with nothing", async () => {
+  const rule = (site: string): LearnedRule => ({
+    site,
+    createdAt: 1,
+    stage1: {
+      action: "reject",
+      target: { selector: ":scope > button:nth-of-type(2)", text: "Reject all", label: "reject" },
+    },
+  });
+
+  it("saveRule stores the top frame's rule; hello then returns it for the site, www. or not", async () => {
+    const { bg, app } = started();
+    const top = fakeContent(bg, { url: "https://www.shop.example/cart" });
+    expect(await top.send({ type: "saveRule", rule: rule("shop.example") })).toBeUndefined();
+    expect(await app.rules.get("shop.example")).toEqual(rule("shop.example"));
+
+    const next = fakeContent(bg, { tabId: 2, url: "https://shop.example/" });
+    expect(await next.send({ type: "hello" })).toMatchObject({
+      enabled: true,
+      learnedRule: rule("shop.example"),
+    });
+  });
+
+  it("ignores a rule for another site, an invalid one, and one from a child frame", async () => {
+    const { bg, app } = started();
+    const top = fakeContent(bg, { url: "https://shop.example/" });
+    await top.send({ type: "saveRule", rule: rule("other.example") });
+    // A reject needs no second stage: a rule that has one is malformed.
+    const stage2 = { action: "reject" as const, target: rule("x").stage1.target };
+    await top.send({ type: "saveRule", rule: { ...rule("shop.example"), stage2 } });
+    const child = fakeContent(bg, {
+      frameId: 3,
+      url: "https://shop.example/frame",
+      tabUrl: "https://shop.example/",
+    });
+    await child.send({ type: "saveRule", rule: rule("shop.example") });
+    expect(await app.rules.list()).toEqual([]);
+  });
+
+  it("discardRule removes the sender's site's rule, and only that", async () => {
+    const { bg, app } = started();
+    await app.rules.put(rule("shop.example"));
+    await app.rules.put(rule("other.example"));
+    const top = fakeContent(bg, { url: "https://shop.example/" });
+    expect(await top.send({ type: "discardRule", site: "other.example" })).toBeUndefined();
+    expect(await app.rules.list()).toHaveLength(2);
+    await top.send({ type: "discardRule", site: "shop.example" });
+    expect(await app.rules.list()).toEqual([rule("other.example")]);
+  });
+
+  it("hello gives no rule to a child frame, a disabled site, or a sender with no tab", async () => {
+    const { bg, app } = started();
+    await app.rules.put(rule("shop.example"));
+    const child = fakeContent(bg, {
+      frameId: 3,
+      url: "https://cmp.example/",
+      tabUrl: "https://shop.example/",
+    });
+    expect((await child.send({ type: "hello" }))?.learnedRule).toBeUndefined();
+    const popup = fakeContent(bg, { tabId: -1, frameId: -1, url: "https://shop.example/" });
+    expect((await popup.send({ type: "hello" }))?.learnedRule).toBeUndefined();
+    await saveSettings(bg.local, { ...DEFAULT_SETTINGS, disabledSites: ["shop.example"] });
+    const top = fakeContent(bg, { url: "https://shop.example/" });
+    expect((await top.send({ type: "hello" }))?.learnedRule).toBeUndefined();
+  });
+
+  it("keeps the rules in local storage, which survives a browser restart", async () => {
     const { bg } = started();
-    const top = fakeContent(bg);
-    expect(await top.send({ type: "saveRule", rule: {} })).toBeUndefined();
-    expect(await top.send({ type: "discardRule", site: "a.example" })).toBeUndefined();
+    await fakeContent(bg, { url: "https://shop.example/" }).send({
+      type: "saveRule",
+      rule: rule("shop.example"),
+    });
+    expect(await bg.local.get("learnedRules")).toEqual({ "shop.example": rule("shop.example") });
+    expect(await bg.session.get("learnedRules")).toBeUndefined();
   });
 });
 
@@ -419,8 +487,6 @@ describe("the message handler's contract with the platform", () => {
 
   it("returns undefined, not a promise, when there is nothing to wait for", () => {
     const handle = handlerOf();
-    expect(handle({ type: "saveRule", rule: {} }, from)).toBeUndefined();
-    expect(handle({ type: "discardRule", site: "a.example" }, from)).toBeUndefined();
     expect(handle({ type: "popupFound", cmp: "onetrust" }, from)).toBeUndefined();
   });
 
@@ -430,6 +496,9 @@ describe("the message handler's contract with the platform", () => {
       { type: "hello" },
       { type: "claim" },
       { type: "ai", op: "status", args: [] },
+      // Stored before the reply, so a discard and a save sent in turn land in that order.
+      { type: "saveRule", rule: {} },
+      { type: "discardRule", site: "a.example" },
     ]) {
       const reply = handle(msg, from);
       expect(reply).toBeInstanceOf(Promise);

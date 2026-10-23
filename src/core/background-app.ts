@@ -3,10 +3,11 @@ import { serveAi } from "./ai-remote.ts";
 import { Arbiter } from "./arbiter.ts";
 import { type AcLib, AutoconsentHost } from "./autoconsent-bg.ts";
 import { ModelBudget } from "./budget.ts";
+import { isLearnedRule, LearnedRules } from "./learned.ts";
 import { DecisionLog } from "./log.ts";
 import { type AiRequest, isAcMessage, isToBackground, type ToBackground } from "./messages.ts";
 import type { BackgroundPlatform, Sender } from "./platform.ts";
-import { enabledFor, loadSettings } from "./settings.ts";
+import { enabledFor, loadSettings, siteOf } from "./settings.ts";
 
 export interface BackgroundOptions {
   /**
@@ -21,12 +22,11 @@ export interface BackgroundApp {
   readonly arbiter: Arbiter;
   /** The one decision log for this background's lifetime (its write queue is per instance). */
   readonly log: DecisionLog;
+  /** The learned rules (§2h), in local storage; one instance, as for the log. */
+  readonly rules: LearnedRules;
   /** autoconsent's host, over the same arbiter and log; absent without `acLib`. */
   readonly autoconsent?: AutoconsentHost;
 }
-
-/** The messages that need work. `saveRule` and `discardRule` are acknowledged without any. */
-type Work = Exclude<ToBackground, { type: "saveRule" | "discardRule" }>;
 
 const refuse = (error: string): Promise<AiResult<never>> =>
   Promise.resolve({
@@ -54,9 +54,9 @@ function siteQuery(url: string | undefined): Record<string, string> | undefined 
 
 /**
  * Composes the background: routes Bouncer's messages to the arbiter, the AI provider (through a
- * per-page budget), the decision log and the settings, routes autoconsent's to its host (which
- * shares the arbiter and the log), and registers the browser events. All registration happens
- * before this returns, with nothing awaited first, as a service worker needs.
+ * per-page budget), the decision log, the learned rules and the settings, routes autoconsent's to
+ * its host (which shares the arbiter and the log), and registers the browser events. All
+ * registration happens before this returns, with nothing awaited first, as a service worker needs.
  *
  * Per-tab state that must outlive a worker restart (the arbiter's claims, autoconsent's opt-outs)
  * lives in `p.session`. The AI budgets are kept in memory only: a restarted worker gives each page
@@ -69,6 +69,7 @@ export function startBackground(
 ): BackgroundApp {
   const arbiter = new Arbiter(p.session);
   const log = new DecisionLog(p.local);
+  const rules = new LearnedRules(p.local);
   const autoconsent =
     opts.acLib && new AutoconsentHost(p, arbiter, log, opts.acLib, () => loadSettings(p.local));
 
@@ -94,6 +95,14 @@ export function startBackground(
     }
   }
 
+  /**
+   * The site whose learned rule a sender may read and change: the page's, for its top frame.
+   * Only the top frame runs Bouncer's own path; any other sender gets "".
+   */
+  function ruleSite(from: Sender): string {
+    return from.tabId >= 0 && from.frameId === 0 ? siteOf(from.tabUrl || from.url) : "";
+  }
+
   async function hello(from: Sender) {
     const hasTab = from.tabId >= 0;
     if (hasTab && from.frameId === 0) {
@@ -101,15 +110,26 @@ export function startBackground(
       dropBudgets(from.tabId, from.documentId); // the earlier documents are gone
     }
     const settings = await loadSettings(p.local);
+    // `enabledFor` includes the global switch. A sender with no tab is not a page to act on.
+    // The verdict is the page's: a child frame (a CMP's iframe, about:blank) is judged by the
+    // tab's site, not its own.
+    const enabled = hasTab && enabledFor(settings, from.tabUrl || from.url);
+    const site = ruleSite(from);
     return {
-      // `enabledFor` includes the global switch. A sender with no tab is not a page to act on.
-      // The verdict is the page's: a child frame (a CMP's iframe, about:blank) is judged by the
-      // tab's site, not its own.
-      enabled: hasTab && enabledFor(settings, from.tabUrl || from.url),
+      enabled,
       settings,
-      // Task 20 fills this in from the stored rule for the site.
-      learnedRule: undefined,
+      learnedRule: enabled && site ? await rules.get(site) : undefined,
     };
+  }
+
+  /** Stores a rule for the sender's own site only; anything else is ignored. */
+  async function saveRule(rule: unknown, from: Sender): Promise<void> {
+    const site = ruleSite(from);
+    if (site && isLearnedRule(rule) && rule.site === site) await rules.put(rule);
+  }
+
+  async function discardRule(site: unknown, from: Sender): Promise<void> {
+    if (site !== "" && site === ruleSite(from)) await rules.remove(site);
   }
 
   function claim(from: Sender) {
@@ -128,8 +148,8 @@ export function startBackground(
     return serveAi(budgetFor(from.tabId, from.documentId), msg.op, msg.args);
   }
 
-  /** Answers a Bouncer message that needs work. A failure is logged and the reply is nothing. */
-  async function answer(msg: Work, from: Sender): Promise<unknown> {
+  /** Answers a Bouncer message. A failure is logged and the reply is nothing. */
+  async function answer(msg: ToBackground, from: Sender): Promise<unknown> {
     try {
       switch (msg.type) {
         case "hello":
@@ -142,6 +162,10 @@ export function startBackground(
           return { id: await log.add(msg.entry) };
         case "logPatch":
           return await log.patch(msg.id, msg.patch);
+        case "saveRule":
+          return await saveRule(msg.rule, from);
+        case "discardRule":
+          return await discardRule(msg.site, from);
       }
     } catch (e) {
       report(`failed to handle ${msg.type}`, e);
@@ -159,8 +183,6 @@ export function startBackground(
       }
       return undefined;
     }
-    // Task 20 implements learned rules; until then both are acknowledged and ignored.
-    if (msg.type === "saveRule" || msg.type === "discardRule") return undefined;
     return answer(msg, from);
   });
 
@@ -180,5 +202,5 @@ export function startBackground(
     p.openPage("onboarding").catch((e) => report("failed to open onboarding", e));
   });
 
-  return { arbiter, log, autoconsent };
+  return { arbiter, log, rules, autoconsent };
 }
