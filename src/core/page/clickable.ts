@@ -3,17 +3,54 @@
 import type { AbsentReason } from "../types.ts";
 import { parentOf } from "./dom.ts";
 
-/** What activating this one element does by itself, ignoring its ancestors. */
-function ownReason(el: Element): AbsentReason | null {
+type LinkKind = "none" | "script" | "fragment" | "navigates";
+
+/** Resolved href and effective target of an HTML `<a>`/`<area>` or an SVG `<a>`; null for others. */
+function linkParts(el: Element): { href: string | null; target: string } | null {
+  let target: string;
   if (el instanceof HTMLAnchorElement || el instanceof HTMLAreaElement) {
-    const href = el.getAttribute("href");
-    if (href === null) return null;
-    if (el.target.toLowerCase() === "_blank") return "navigates";
-    const h = href.trim().toLowerCase();
-    // `#…` is clickable with a guard (see safeClick); `javascript:` navigates nowhere.
-    if (h.startsWith("#") || h.startsWith("javascript:")) return null;
+    target = el.getAttribute("target") ?? "";
+  } else if (el instanceof SVGAElement) {
+    target = el.getAttribute("target") ?? "";
+  } else {
+    return null;
+  }
+  // An inherited <base target> applies when the link has no target of its own.
+  if (target === "")
+    target = el.ownerDocument.querySelector("base[target]")?.getAttribute("target") ?? "";
+  const href = el.getAttribute("href") ?? el.getAttributeNS("http://www.w3.org/1999/xlink", "href");
+  return { href, target: target.trim().toLowerCase() };
+}
+
+/** Classifies a link by its resolved URL, as the browser would follow it. */
+function linkKind(el: Element): LinkKind {
+  const p = linkParts(el);
+  if (!p || p.href === null) return "none";
+  let url: URL;
+  try {
+    url = new URL(p.href, el.baseURI);
+  } catch {
     return "navigates";
   }
+  if (url.protocol === "javascript:")
+    return p.target === "" || p.target === "_self" ? "script" : "navigates";
+  if (p.target !== "" && p.target !== "_self") return "navigates";
+  const here = el.ownerDocument.URL.split("#")[0];
+  // A `<base href>` elsewhere makes `#x` cross-document, which this comparison catches.
+  if (url.href.includes("#") && url.href.split("#")[0] === here) return "fragment";
+  return "navigates";
+}
+
+/** A link to a fragment of the current document: clickable only with the `#` guard. */
+export function isFragmentLink(el: Element): boolean {
+  return linkKind(el) === "fragment";
+}
+
+/** What activating this one element does by itself, ignoring its ancestors. */
+function ownReason(el: Element): AbsentReason | null {
+  const kind = linkKind(el);
+  if (kind === "navigates") return "navigates";
+  if (kind !== "none") return null;
   let type: string | null = null;
   if (el instanceof HTMLButtonElement) {
     // `type` is already normalised by the platform: a missing or invalid value reads "submit".

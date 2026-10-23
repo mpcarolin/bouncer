@@ -32,8 +32,29 @@ describe("clickability", () => {
     ['<form><button type="button">x</button></form>', null],
     ["<form><button><span>x</span></button></form>", "submit"],
     ['<a href="#x"><div role=button>x</div></a>', null],
+    ['<a href=" JavaScript:void 0">x</a>', null],
+    ['<a href="java\tscript:void 0">x</a>', null],
+    ['<a href="\u00a0javascript:void 0">x</a>', "navigates"],
+    ['<a href="#x" target=_top>x</a>', "navigates"],
+    ['<a href="/p" target=_self>x</a>', "navigates"],
+    ['<base target=_blank><a href="#x">x</a>', "navigates"],
+    ['<map><area href="/p"></map>', "navigates"],
+    ["<map><area></map>", null],
+    ['<svg><a href="/p"><text>x</text></a></svg>', "navigates"],
+    ['<svg><a href="#x"><text>x</text></a></svg>', null],
   ] as const)("%s -> %s", (html, want) => {
     expect(clickability(mountTarget(html))).toBe(want);
+  });
+
+  test("a <base href> elsewhere makes #x cross-document", () => {
+    const base = document.createElement("base");
+    base.href = "https://example.com/";
+    document.head.append(base);
+    try {
+      expect(clickability(mountTarget('<a href="#x">x</a>'))).toBe("navigates");
+    } finally {
+      base.remove();
+    }
   });
 
   test("ancestor rule crosses a shadow boundary", () => {

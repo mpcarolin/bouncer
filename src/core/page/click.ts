@@ -1,5 +1,6 @@
 // Every click Bouncer makes goes through `safeClick`: it never navigates, scrolls or clicks a
 // detached element. `captureFocus` undoes focus traps the flow may have triggered.
+import { isFragmentLink } from "./clickable.ts";
 import { parentOf } from "./dom.ts";
 
 export interface ClickResult {
@@ -36,8 +37,10 @@ export class NavigationWatch {
   }
 }
 
-function isHashLink(el: Element): boolean {
-  return el.getAttribute("href")?.trim().startsWith("#") ?? false;
+/** True when activating `el` follows a fragment link: its own, or an ancestor's. */
+function underFragmentLink(el: Element): boolean {
+  for (let n: Element | null = el; n; n = parentOf(n)) if (isFragmentLink(n)) return true;
+  return false;
 }
 
 /**
@@ -50,7 +53,7 @@ function isHashLink(el: Element): boolean {
 export function safeClick(el: Element, nav: NavigationWatch): ClickResult {
   if (!el.isConnected) return { ok: false, reason: "stale_target", hashGuardUsed: false };
   const win = el.ownerDocument.defaultView ?? window;
-  const guarded = isHashLink(el);
+  const guarded = underFragmentLink(el);
   let guardRan = false;
   const guard = (e: Event) => {
     guardRan = true;
@@ -60,7 +63,13 @@ export function safeClick(el: Element, nav: NavigationWatch): ClickResult {
   const { scrollX, scrollY } = win;
   if (guarded) el.addEventListener("click", guard, { once: true });
   try {
-    (el as HTMLElement).click();
+    // SVG elements have no click(); a synthetic click activates their links just the same.
+    if (typeof (el as HTMLElement).click === "function") (el as HTMLElement).click();
+    else {
+      el.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true, composed: true }),
+      );
+    }
   } finally {
     // `once` only removes it if the click reached it.
     if (guarded) el.removeEventListener("click", guard);

@@ -81,6 +81,19 @@ describe("safeClick", () => {
     expect(seen).toBe(false);
   });
 
+  test("guard covers a control inside a # link", () => {
+    const t = link('<a href="#cc"><div id=t role=button>x</div></a>');
+    expect(safeClick(t, nav)).toEqual({ ok: true, hashGuardUsed: true });
+    expect(location.hash).toBe("");
+  });
+
+  test("an SVG element without click() is clicked by dispatch and never throws", () => {
+    const box = mount('<svg><a id=t href="#cc"><text>x</text></a></svg>');
+    const t = box.querySelector("#t") as Element;
+    expect(safeClick(t, nav)).toEqual({ ok: true, hashGuardUsed: true });
+    expect(location.hash).toBe("");
+  });
+
   test("detached element is never clicked", () => {
     const t = link('<button id=t type="button">x</button>');
     let clicks = 0;
