@@ -11,9 +11,14 @@ export interface Candidate {
   key: string;
 }
 
-/** Wording that marks consent text on its own. "Privacy" is not in it: a newsletter modal has it too. */
-export const CONSENT_WORDING = /cookie|consent|datenschutz|confidentialit|privacidad/i;
-const CONSENT_TEXT = new RegExp(`${CONSENT_WORDING.source}|privacy`, "i");
+/**
+ * Wording that marks consent text on its own. The privacy words are not in it ("privacy" and
+ * its German, French and Spanish forms): a newsletter modal links to a privacy policy too.
+ */
+export const CONSENT_WORDING = /cookie|consent/i;
+const PRIVACY_WORDING = /privacy|datenschutz|confidentialit|privacidad/i;
+/** Text that lets an element be a banner candidate: consent wording or a privacy word. */
+const CONSENT_TEXT = new RegExp(`${CONSENT_WORDING.source}|${PRIVACY_WORDING.source}`, "i");
 const Z_INDEX_MIN = 1000;
 const MODAL_COVERAGE = 0.5;
 

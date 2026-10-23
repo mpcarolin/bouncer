@@ -64,7 +64,7 @@ function isToggle(el: Element): boolean {
 }
 
 /** Custom switches hide the real input and style a label or parent, so look there too. */
-function isVisibleControl(el: Element): boolean {
+export function isVisibleControl(el: Element): boolean {
   if (isVisible(el)) return true;
   if (!isToggle(el)) return false;
   const labels = (el as HTMLInputElement).labels;

@@ -1,9 +1,15 @@
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { readToggle, recheck, setToggles } from "../../src/core/page/toggles.ts";
 import { mount, unmountAll } from "../helpers/mount.ts";
 
+let startUrl: string;
+
+beforeEach(() => {
+  startUrl = location.href;
+});
 afterEach(() => {
   unmountAll();
+  history.replaceState(null, "", startUrl);
   window.scrollTo(0, 0);
 });
 
@@ -31,7 +37,7 @@ describe("toggles", () => {
     const t = box.querySelector("#t") as HTMLInputElement;
     expect(box.querySelector("details")?.open).toBe(false);
     expect(readToggle(t)).toBe(true);
-    setToggles([{ el: t, to: false }]);
+    expect(setToggles([{ el: t, to: false }])).toEqual({ ok: true });
     expect(t.checked).toBe(false);
     expect(recheck([{ el: t, to: false }])).toBe(true);
   });
@@ -59,11 +65,13 @@ describe("toggles", () => {
     expect(readToggle(s)).toBe(false);
   });
 
-  test("never clicks a disabled toggle, and recheck then fails", () => {
+  test("never clicks an aria-disabled switch, or one inside an aria-disabled container", () => {
+    const flip = `onclick="this.setAttribute('aria-checked','false')"`;
     const box = mount(
-      `<input id=a type=checkbox checked disabled><div id=b role=switch aria-checked=true aria-disabled=true></div>`,
+      `<div id=a role=switch aria-checked=true aria-disabled=true ${flip}></div>
+       <div aria-disabled=true><div id=b role=switch aria-checked=true ${flip}></div></div>`,
     );
-    const a = box.querySelector("#a") as HTMLInputElement;
+    const a = box.querySelector("#a") as Element;
     const b = box.querySelector("#b") as Element;
     let clicks = 0;
     for (const el of [a, b]) el.addEventListener("click", () => clicks++);
@@ -71,9 +79,62 @@ describe("toggles", () => {
       { el: a, to: false },
       { el: b, to: false },
     ];
-    setToggles(targets);
+    expect(setToggles(targets)).toEqual({ ok: true });
     expect(clicks).toBe(0);
+    expect([readToggle(a), readToggle(b)]).toEqual([true, true]);
     expect(recheck(targets)).toBe(false);
+  });
+
+  test("skips a switch whose click would submit its form, and carries on with the rest", () => {
+    // A <button> with no type is a submit button. `onsubmit` keeps a failing run from navigating.
+    const box = mount(`<form onsubmit="return false">
+      <button id=s role=switch aria-checked=true onclick="this.setAttribute('aria-checked','false')">Ads</button>
+      <input id=c type=checkbox checked></form>`);
+    const s = box.querySelector("#s") as Element;
+    const c = box.querySelector("#c") as HTMLInputElement;
+    let clicks = 0;
+    s.addEventListener("click", () => clicks++);
+    const targets = [
+      { el: s, to: false },
+      { el: c, to: false },
+    ];
+    expect(setToggles(targets)).toEqual({ ok: true });
+    expect(clicks).toBe(0);
+    expect(readToggle(s)).toBe(true);
+    expect(c.checked).toBe(false);
+    expect(recheck(targets)).toBe(false);
+  });
+
+  test("skips a switch inside a link that would navigate", () => {
+    const box = mount(
+      `<a id=l href="/x"><div id=s role=switch aria-checked=true onclick="this.setAttribute('aria-checked','false')"></div></a>`,
+    );
+    const s = box.querySelector("#s") as Element;
+    // Safety net for a failing run only: stops the page itself navigating away.
+    box.querySelector("#l")?.addEventListener("click", (e) => e.preventDefault());
+    let clicks = 0;
+    s.addEventListener("click", () => clicks++);
+    expect(setToggles([{ el: s, to: false }])).toEqual({ ok: true });
+    expect(clicks).toBe(0);
+    expect(readToggle(s)).toBe(true);
+  });
+
+  test("a click that changes the hash stops the loop and reports why", () => {
+    const box = mount(`<a href="#cc"><div id=s role=switch aria-checked=true></div></a>
+      <input id=c type=checkbox checked>`);
+    const s = box.querySelector("#s") as Element;
+    const c = box.querySelector("#c") as HTMLInputElement;
+    // Defeats the hash guard (see click.test.ts), so the link's jump goes through.
+    s.addEventListener("click", (e) => e.stopImmediatePropagation());
+    let clicks = 0;
+    c.addEventListener("click", () => clicks++);
+    const r = setToggles([
+      { el: s, to: false },
+      { el: c, to: false },
+    ]);
+    expect(r).toEqual({ ok: false, reason: "hash_changed" });
+    expect(clicks).toBe(0);
+    expect(c.checked).toBe(true);
   });
 
   test("does not scroll", () => {
