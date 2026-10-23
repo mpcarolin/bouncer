@@ -13,6 +13,8 @@ export default defineConfig({
         },
       },
       {
+        // Pre-bundled so the first run doesn't discover it mid-test and reload the page.
+        optimizeDeps: { include: ["@duckduckgo/autoconsent/heuristics"] },
         test: {
           name: "dom",
           include: ["test/dom/**/*.test.ts"],

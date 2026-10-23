@@ -1,0 +1,12 @@
+<!doctype html><html><head><meta charset="utf-8"><title>chat widget and cookie banner</title><style>
+body { font: 16px system-ui; margin: 0; } main { padding: 24px; height: 3000px; }
+.banner { position: fixed; left: 0; right: 0; bottom: 0; background: #222; color: #fff; padding: 16px; z-index: 9999; }
+.modal { position: fixed; inset: 10% 20%; background: #fff; border: 1px solid #999; padding: 16px; z-index: 10000; }
+.chat { position: fixed; right: 16px; bottom: 120px; width: 280px; background: #eef; padding: 12px; z-index: 10001; }
+</style></head>
+<body><main><h1>Chat widget next to a cookie banner</h1><p>Expected: the chat widget is judged not consent and never touched; the banner is refused.</p></main>
+<div class="chat" id="chat-widget">Chat with us! By starting a chat you agree to our privacy policy and the use of chat cookies.
+  <button onclick="window.__chatClicked='start'">Start chat</button> <button aria-label="Close chat" onclick="window.__chatClicked='close'; this.parentElement.remove()">×</button></div>
+<div class="banner" id="cookie-notice">We use cookies to analyse traffic and personalise ads. You can accept all or reject optional cookies.
+  <button onclick="window.__clicked='accept'; this.parentElement.remove()">Accept all</button> <button onclick="window.__clicked='reject'; this.parentElement.remove()">Reject all</button></div>
+</body></html>

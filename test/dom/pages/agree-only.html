@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><title>agree only</title><style>
+body { font: 16px system-ui; margin: 0; } main { padding: 24px; height: 3000px; }
+.banner { position: fixed; left: 0; right: 0; bottom: 0; background: #222; color: #fff; padding: 16px; z-index: 9999; }
+.modal { position: fixed; inset: 10% 20%; background: #fff; border: 1px solid #999; padding: 16px; z-index: 10000; }
+.chat { position: fixed; right: 16px; bottom: 120px; width: 280px; background: #eef; padding: 12px; z-index: 10001; }
+</style></head>
+<body><main><h1>Agree-only cookie dialog</h1><p>Expected: no_option, left alone; with "agree to dismiss", "I agree" is clicked.</p></main>
+<div class="banner" id="cookie-agree-bar">We use cookies to personalise content and ads. By using this site you consent to our use of cookies.
+  <button onclick="window.__clicked='agree'; this.parentElement.remove()">I agree</button></div>
+</body></html>

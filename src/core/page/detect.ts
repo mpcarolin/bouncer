@@ -31,7 +31,8 @@ export function hashText(text: string): string {
   return h.toString(16);
 }
 
-function isOverlay(el: Element): boolean {
+/** Fixed, sticky, high z-index, or a dialog: what a banner (or any overlay) is made of. */
+export function isOverlay(el: Element): boolean {
   if (el.matches('[role="dialog"], [aria-modal="true"]')) return true;
   const cs = getComputedStyle(el);
   return (
@@ -53,7 +54,8 @@ function sameOriginLinks(el: Element): number {
   return n;
 }
 
-function isModal(el: Element): boolean {
+/** `aria-modal`, or covering most of the viewport (§2a's modal test). */
+export function isModal(el: Element): boolean {
   if (el.hasAttribute("aria-modal") && el.getAttribute("aria-modal") !== "false") return true;
   const r = el.getBoundingClientRect();
   const viewport = innerWidth * innerHeight;
