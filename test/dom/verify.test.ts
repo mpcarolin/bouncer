@@ -14,7 +14,10 @@ beforeEach(() => {
 afterEach(() => {
   nav.dispose();
   unmountAll();
-  for (const s of document.querySelectorAll("style#autoconsent-prehide")) s.remove();
+  for (const s of document.querySelectorAll(
+    "style#autoconsent-prehide, style#autoconsent-css-rules",
+  ))
+    s.remove();
   window.scrollTo(0, 0);
 });
 
@@ -148,6 +151,26 @@ describe("verifyDismissed", () => {
       ok: false,
       reason: "navigation",
     });
+  });
+  test("a banner re-inserted as a new element: reappeared() gives came_back; without it, ok", async () => {
+    const run = async (reappeared?: () => boolean) => {
+      const b = mk();
+      const parent = b.parentElement as Element;
+      b.remove();
+      setTimeout(() => {
+        const clone = b.cloneNode(true) as Element;
+        clone.id = "clone";
+        parent.append(clone);
+      }, 200);
+      return verifyDismissed([b], { ...fast, nav, reappeared });
+    };
+    const seen = () => document.querySelector("#clone") !== null;
+    expect(await run(seen)).toEqual({ ok: false, reason: "came_back" });
+    document.querySelector("#clone")?.remove();
+    expect(await run()).toEqual({ ok: true });
+  });
+  test("no elements is not a dismissal", async () => {
+    expect(await verifyDismissed([], { ...fast, nav })).toEqual({ ok: false, reason: "not_gone" });
   });
   test("an autoconsent style matching the element fails with autoconsent_style", async () => {
     const b = mk();

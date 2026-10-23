@@ -5,6 +5,7 @@ import type { NavigationWatch } from "./click.ts";
 import { parentOf } from "./dom.ts";
 
 const POLL_MS = 100;
+const MIN_GAP_MS = 50;
 const AUTOCONSENT_STYLES = "style#autoconsent-prehide, style#autoconsent-css-rules";
 
 /** Detached, display:none, visibility:hidden, opacity 0, zero size, or fixed and off-screen. */
@@ -69,6 +70,8 @@ export interface VerifyOptions {
   goneMs?: number;
   stayMs?: number;
   nav: NavigationWatch;
+  /** True when the site has put the banner back as a new element; checked every tick. */
+  reappeared?: () => boolean;
 }
 
 export interface VerifyResult {
@@ -84,10 +87,21 @@ export interface VerifyResult {
 export async function verifyDismissed(els: Element[], o: VerifyOptions): Promise<VerifyResult> {
   const goneMs = o.goneMs ?? VERIFY_GONE_MS;
   const stayMs = o.stayMs ?? VERIFY_STAY_MS;
-  const doc = els[0]?.ownerDocument ?? document;
+  // Nothing to watch is not a dismissal.
+  if (els.length === 0) return { ok: false, reason: "not_gone" };
+  const doc = (els[0] as Element).ownerDocument;
   let wake: (() => void) | undefined;
-  const mo = new MutationObserver(() => wake?.());
-  mo.observe(doc, { subtree: true, childList: true, attributes: true });
+  let lastCheck = Number.NEGATIVE_INFINITY;
+  // A busy page must not make us spin: wake early at most every MIN_GAP_MS.
+  const mo = new MutationObserver(() => {
+    if (performance.now() - lastCheck >= MIN_GAP_MS) wake?.();
+  });
+  mo.observe(doc, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ["style", "class", "hidden"],
+  });
   const tick = () =>
     new Promise<void>((resolve) => {
       const t = setTimeout(done, POLL_MS);
@@ -99,8 +113,10 @@ export async function verifyDismissed(els: Element[], o: VerifyOptions): Promise
       wake = done;
     });
   const interrupted = (): VerifyResult | null => {
+    lastCheck = performance.now();
     if (o.nav.started()) return { ok: false, reason: "navigation" };
     if (els.some(autoconsentStyleTouches)) return { ok: false, reason: "autoconsent_style" };
+    if (o.reappeared?.()) return { ok: false, reason: "came_back" };
     return null;
   };
   try {

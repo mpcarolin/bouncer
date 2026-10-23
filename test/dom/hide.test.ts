@@ -93,6 +93,21 @@ describe("Hider", () => {
     expect(host.hasAttribute("data-bouncer-hidden")).toBe(false);
   });
 
+  test("two nested sole-content hosts are both hidden", () => {
+    const outer = mount("<div id=o></div>").querySelector("#o") as HTMLElement;
+    const osr = outer.attachShadow({ mode: "open" });
+    osr.innerHTML = "<div id=i></div>";
+    const inner = osr.querySelector("#i") as HTMLElement;
+    const isr = inner.attachShadow({ mode: "open" });
+    isr.innerHTML = "<div id=b>cookies</div>";
+    hider.hide(isr.querySelector("#b") as Element, isr);
+    expect(inner.hasAttribute("data-bouncer-hidden")).toBe(true);
+    expect(outer.hasAttribute("data-bouncer-hidden")).toBe(true);
+    hider.unhideAll();
+    expect(outer.hasAttribute("data-bouncer-hidden")).toBe(false);
+    expect(osr.querySelector("style[data-bouncer]")).toBeNull();
+  });
+
   test("an outer host is not hidden when an inner host also holds other content", () => {
     const outer = mount("<div id=o></div>").querySelector("#o") as HTMLElement;
     const osr = outer.attachShadow({ mode: "open" });

@@ -16,6 +16,7 @@ function isInert(n: Node): boolean {
 
 /** True when, at every level from `el` up to `root`, `el`'s branch is the only content. */
 function isSoleContent(el: Element, root: ShadowRoot): boolean {
+  if (el.getRootNode() !== root) return false;
   let n: Node = el;
   while (n.parentNode) {
     const parent: Node = n.parentNode;
