@@ -19,7 +19,8 @@ export type SkipReason =
   | "not_scrollable_before"
   | "not_locked"
   | "overlay_showing"
-  | "inline_changed";
+  | "inline_changed"
+  | "lock_not_inline";
 
 export type UnlockResult = "unlocked" | `skipped:${SkipReason}`;
 
@@ -92,6 +93,12 @@ export class ScrollTracker {
     }
     this.doc.documentElement.style.overflow = this.record.html;
     if (this.doc.body) this.doc.body.style.overflow = this.record.body;
+    if (this.isLocked()) {
+      // A fixed body or a class/stylesheet lock isn't released by inline overflow: undo.
+      this.doc.documentElement.style.overflow = now.html;
+      if (this.doc.body) this.doc.body.style.overflow = now.body;
+      return "skipped:lock_not_inline";
+    }
     return "unlocked";
   }
 }
