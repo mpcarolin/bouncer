@@ -50,7 +50,7 @@ const negatedNecessary = new RegExp(
 );
 const OPTOUT_RE = /do not sell|don.?t sell|do not share|opt.?out|limit the use/;
 const CLOSE_RE =
-  /^(?:(?:×|x|✕|✖|✗|skip|lukk|luk|schliessen|fermer|cerrar|chiudi|sluiten|stang|sulje|zamknij|fechar)|(?:close|dismiss)(?: (?:this|the|cookie|cookies|preference|preferences|privacy|consent|settings|banner|dialog|popup|pop-up|modal|notice|message|window|panel|center|centre))*)$/;
+  /^(?:(?:×|x|✕|✖|✗|skip|lukk|luk|schließen|schliessen|fermer|cerrar|chiudi|sluiten|stang|sulje|zamknij|fechar)|(?:close|dismiss)(?: (?:this|the|cookie|cookies|preference|preferences|privacy|consent|settings|banner|dialog|popup|pop-up|modal|notice|message|window|panel|center|centre))*)$/;
 const saveWord = wordRe(words(SAVE_VERBS));
 const saveStem = stemRe(stems(SAVE_VERBS));
 
@@ -82,12 +82,11 @@ function withBlocks(c: Control, label: Label, source: Labelled["source"]): Label
   const sources = textSources(c);
   const cls = regexClass(c);
   if (isAcceptAll(sources, cls)) return { label, source, blocked: "accept_all" };
-  if ((cls === "reject" || cls === "settings") && isVetoed(sources)) {
+  const rejectish = (l: string) => l === "reject" || l === "settings";
+  if ((rejectish(cls) || rejectish(label)) && isVetoed(sources)) {
     return { label, source, blocked: "accept_verb_veto" };
   }
-  if (cls === "reject" && isDoNotSell(sources)) {
-    return { label: "other", source, blocked: "do_not_sell" };
-  }
+  if (isDoNotSell(sources)) return { label: "other", source, blocked: "do_not_sell" };
   return { label, source };
 }
 

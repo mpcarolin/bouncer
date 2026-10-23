@@ -87,3 +87,35 @@ test("AI labels pass the block rules", () =>
     source: "ai",
     blocked: "accept_all",
   }));
+
+test("do not sell is blocked whatever the regex class or AI label", () => {
+  expect(lab([lnk("Don't sell my data")], { 0: "settings" })[0]).toMatchObject({
+    label: "other",
+    blocked: "do_not_sell",
+  });
+  expect(lab([lnk("Don't sell my data")], { 0: "reject" })[0]).toMatchObject({
+    label: "other",
+    blocked: "do_not_sell",
+  });
+});
+
+test("AI settings or reject with an accept verb is vetoed", () => {
+  expect(lab([btn("Anpassen und akzeptieren")], { 0: "settings" })[0]).toMatchObject({
+    label: "settings",
+    blocked: "accept_verb_veto",
+  });
+  expect(lab([btn("Manage and agree")], { 0: "reject" })[0]?.blocked).toBe("accept_verb_veto");
+});
+
+test("regex settings with an accept verb is vetoed", () => {
+  expect(lab([btn("Customize and agree")])[0]).toMatchObject({
+    label: "settings",
+    source: "regex",
+    blocked: "accept_verb_veto",
+  });
+});
+
+test("Schließen is close", () => {
+  expect(lab([btn("Schließen")])[0]?.label).toBe("close");
+  expect(lab([btn("Schliessen")])[0]?.label).toBe("close");
+});
