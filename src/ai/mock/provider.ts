@@ -4,6 +4,12 @@ import type { Control, Label, SerialisedBanner } from "../../core/types.ts";
 /** Marker so the build can prove the mock is (or isn't) in a bundle. */
 export const MOCK_MARKER = "__BOUNCER_MOCK__";
 
+/** The mock's "download": it has nothing to fetch, so it is done at once. */
+export async function mockDownload(onProgress: (loaded: number) => void): Promise<AiStatus> {
+  onProgress(1);
+  return { state: "available", onDevice: true };
+}
+
 const META: AiMeta = { ms: 0, cold: false, onDevice: true };
 
 const LABELS: Record<string, Label> = {

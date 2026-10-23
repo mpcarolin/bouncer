@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GATE_SCHEMA, GATE_SYSTEM } from "../../src/ai/prompt-api/prompts.ts";
 import { PromptApiProvider } from "../../src/ai/prompt-api/provider.ts";
 import { TIMEOUT, timebox } from "../../src/ai/prompt-api/timebox.ts";
+import { CREATE_TIMEOUT_MS } from "../../src/core/config.ts";
 import { b, btn, lnk, tog } from "../helpers/banner.ts";
 import { fakeLanguageModel, namedError } from "../helpers/fake-language-model.ts";
 import type { FakeOptions } from "../helpers/fake-language-model.ts";
@@ -53,6 +54,53 @@ describe("status", () => {
     expect((await p.labelControls(banner, [0])).kind).toBe("error");
     expect(state.createCalls).toHaveLength(0);
     expect(state.prompts).toHaveLength(0);
+  });
+});
+
+describe("download", () => {
+  it("creates one session with a monitor, forwards the progress, and destroys the session", async () => {
+    const { p, state } = make({ availability: "downloadable", downloadProgress: [0, 0.25, 1] });
+    const seen: number[] = [];
+    expect(await p.download((f) => seen.push(f))).toEqual({ state: "available", onDevice: true });
+    expect(seen).toEqual([0, 0.25, 1]);
+    expect(state.createCalls).toHaveLength(1);
+    expect(state.createCalls[0]).toMatchObject({
+      expectedInputs: [{ type: "text", languages: ["en"] }],
+      expectedOutputs: [{ type: "text", languages: ["en"] }],
+    });
+    expect(state.sessions).toBe(1);
+    expect(state.destroyed).toBe(1);
+  });
+
+  it("is not time-boxed: a download far past the create limit still resolves", async () => {
+    const { p } = make({
+      availability: "downloadable",
+      downloadProgress: [1],
+      createMs: 10 * CREATE_TIMEOUT_MS,
+    });
+    const pending = p.download(() => {});
+    await vi.advanceTimersByTimeAsync(10 * CREATE_TIMEOUT_MS);
+    expect(await pending).toEqual({ state: "available", onDevice: true });
+  });
+
+  it("never throws: a failed create resolves the current status, with the error as the reason", async () => {
+    const { p } = make({
+      availability: "downloadable",
+      throwOn: { create: namedError("NotAllowedError") },
+    });
+    expect(await p.download(() => {})).toEqual({
+      state: "downloadable",
+      reason: "download_error:NotAllowedError",
+      onDevice: true,
+    });
+  });
+
+  it("without the Prompt API resolves unavailable", async () => {
+    expect(await new PromptApiProvider(undefined).download(() => {})).toEqual({
+      state: "unavailable",
+      reason: "no_language_model",
+      onDevice: true,
+    });
   });
 });
 

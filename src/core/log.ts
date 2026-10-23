@@ -47,11 +47,16 @@ export class DecisionLog {
     return run;
   }
 
-  /** Loads, prunes, and persists the pruned list if anything was dropped. */
-  private async load(): Promise<LogEntry[]> {
+  /** The stored entries and those within retention, without writing anything. */
+  private async read(): Promise<{ all: LogEntry[]; kept: LogEntry[] }> {
     const all = (await this.kv.get<LogEntry[]>(KEY)) ?? [];
     const cutoff = this.now() - LOG_RETENTION_MS;
-    const kept = all.filter((e) => e.at >= cutoff);
+    return { all, kept: all.filter((e) => e.at >= cutoff) };
+  }
+
+  /** Loads, prunes, and persists the pruned list if anything was dropped. */
+  private async load(): Promise<LogEntry[]> {
+    const { all, kept } = await this.read();
     if (kept.length !== all.length) await this.kv.set(KEY, kept);
     return kept;
   }
@@ -82,7 +87,18 @@ export class DecisionLog {
     return this.serial(() => this.load());
   }
 
+  /**
+   * As `list`, but writes nothing: for a reader that is not the background (the settings page).
+   * Its own write queue doesn't cover the background's, so a pruning write-back from there could
+   * overwrite an entry the background has just added. Expired entries are left for the
+   * background's next write to prune.
+   */
+  async peek(): Promise<LogEntry[]> {
+    return (await this.read()).kept;
+  }
+
+  /** The log as JSON, read as `peek` reads it. */
   async exportJson(): Promise<string> {
-    return JSON.stringify(await this.list(), null, 2);
+    return JSON.stringify(await this.peek(), null, 2);
   }
 }

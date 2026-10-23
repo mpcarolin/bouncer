@@ -234,6 +234,32 @@ describe("LearnedRules", () => {
     expect(await kv.get("learnedRuleSites")).toEqual(["other.example"]);
   });
 
+  it("removeRuleOnly drops one site's rule and leaves the index and every other rule alone", async () => {
+    const kv = new MemoryKV();
+    const rules = new LearnedRules(kv);
+    await rules.put(rejectRule());
+    await rules.put(rejectRule("other.example"));
+    const sets: string[] = [];
+    const set = kv.set.bind(kv);
+    kv.set = async (k, v) => {
+      sets.push(k);
+      return set(k, v);
+    };
+
+    await rules.removeRuleOnly("example.com");
+
+    expect(sets).toEqual([]); // no read-modify-write of anything the background also writes
+    expect(await kv.get("learnedRule:example.com")).toBeUndefined();
+    expect(await kv.get("learnedRuleSites")).toEqual(["example.com", "other.example"]);
+    expect(await rules.list()).toEqual([rejectRule("other.example")]);
+    expect(await rules.get("example.com")).toBeUndefined();
+
+    // The stale index entry is harmless: the site learns a rule again, once in the index.
+    await rules.put(rejectRule());
+    expect(await kv.get("learnedRuleSites")).toEqual(["example.com", "other.example"]);
+    expect((await rules.list()).map((r) => r.site)).toEqual(["example.com", "other.example"]);
+  });
+
   it("ignores stored entries that aren't valid rules, or are filed under another site", async () => {
     const kv = new MemoryKV();
     await kv.set("learnedRuleSites", [

@@ -91,4 +91,25 @@ describe("DecisionLog", () => {
     await log.add(entry(0, { rule: "r", labels: { 1: { label: "reject", source: "rule" } } }));
     expect(JSON.parse(await log.exportJson())).toEqual(await log.list());
   });
+
+  it("peek lists what list would, but never writes: an expired entry stays stored", async () => {
+    const { log, clock, local } = setup();
+    await log.add(entry(0));
+    const fresh = await log.add(entry(1));
+    clock.t = LOG_RETENTION_MS + 1; // the first entry is now expired
+    const writes: string[] = [];
+    const set = local.set.bind(local);
+    local.set = async (k, v) => {
+      writes.push(k);
+      return set(k, v);
+    };
+    expect((await log.peek()).map((e) => e.id)).toEqual([fresh]);
+    expect(JSON.parse(await log.exportJson())).toHaveLength(1);
+    expect(writes).toEqual([]);
+    expect(await local.get<LogEntry[]>("decisionLog")).toHaveLength(2);
+  });
+
+  it("peek of a log nobody has written to is empty", async () => {
+    expect(await setup().log.peek()).toEqual([]);
+  });
 });

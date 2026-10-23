@@ -10,6 +10,7 @@ import type {
   ContentPlatform,
   KV,
   PageName,
+  PagePlatform,
   Sender,
 } from "../../src/core/platform.ts";
 
@@ -27,6 +28,9 @@ import type {
  *   `documentId`, when the call names one) match: every
  *   message lands in its `inbox` (autoconsent's too, since its content script shares the frame),
  *   and Bouncer's own also reach the `onMessage` handlers.
+ * - `fakePage(bg)` is an extension page (settings, onboarding): it shares the background's
+ *   `local`, as the extension's pages share `chrome.storage.local`, and its messages reach the
+ *   background's handler from a sender with no tab.
  */
 
 export class MemoryKV implements KV {
@@ -182,4 +186,22 @@ export function fakeContent(bg: FakeBackground, sender: Partial<Sender> = {}): F
   };
   bg.contents.add(content);
   return content;
+}
+
+const PAGE_SENDER: Sender = {
+  tabId: -1,
+  frameId: -1,
+  documentId: "",
+  url: "chrome-extension://fake-extension-id/settings.html",
+  tabUrl: "chrome-extension://fake-extension-id/settings.html",
+};
+
+export function fakePage(bg: FakeBackground): PagePlatform {
+  return {
+    local: bg.local,
+    send<M extends ToBackground>(m: M) {
+      return bg.deliver(m, PAGE_SENDER) as Promise<ReplyOf<M> | undefined>;
+    },
+    async openPage() {},
+  };
 }

@@ -1,5 +1,6 @@
 import type { ReplyOf, ToBackground } from "../../core/messages.ts";
 import type { KV, PageName } from "../../core/platform.ts";
+import { pageFile } from "./pages.ts";
 
 /** A `KV` over one `chrome.storage` area. Values are stored as JSON, as the area does. */
 export function chromeKV(area: chrome.storage.StorageArea): KV {
@@ -13,13 +14,13 @@ export function chromeKV(area: chrome.storage.StorageArea): KV {
   };
 }
 
-/** Opens `<page>.html` from this extension in a new tab. `query` becomes its query string. */
+/** Opens the page (`pageFile`) from this extension in a new tab. `query` becomes its query string. */
 export async function openExtensionPage(
   page: PageName,
   query?: Record<string, string>,
 ): Promise<void> {
   const search = new URLSearchParams(query).toString();
-  const url = chrome.runtime.getURL(`${page}.html`) + (search ? `?${search}` : "");
+  const url = chrome.runtime.getURL(pageFile(page)) + (search ? `?${search}` : "");
   await chrome.tabs.create({ url });
 }
 

@@ -214,6 +214,16 @@ export class LearnedRules {
     });
   }
 
+  /**
+   * Removes the site's rule and nothing else: for a caller that is not the background (the
+   * settings page). The index is the background's to rewrite, and its write queue doesn't cover
+   * this caller, so the index keeps a stale entry, which `list()` skips and the next `put` or
+   * `remove` for the site settles.
+   */
+  removeRuleOnly(site: string): Promise<void> {
+    return this.kv.remove(ruleKey(site));
+  }
+
   list(): Promise<LearnedRule[]> {
     return this.serial(async () => {
       const out: LearnedRule[] = [];

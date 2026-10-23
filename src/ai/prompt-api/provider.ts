@@ -84,6 +84,33 @@ export class PromptApiProvider implements AiProvider {
     }
   }
 
+  /**
+   * Downloads the model, reporting `loaded` (0 to 1) as it arrives. It must run from a user click
+   * on an extension page: `create()` starts a download only then, and a service worker can't.
+   * Not time-boxed, since a download takes minutes. Never throws: when it fails, the current
+   * status is returned with the error as its reason.
+   */
+  async download(onProgress: (loaded: number) => void): Promise<AiStatus> {
+    if (!this.lm) return this.status();
+    try {
+      const session = await this.lm.create({
+        ...LANG,
+        monitor: (m) => {
+          m.addEventListener("downloadprogress", (e) => {
+            onProgress((e as Event & { loaded: number }).loaded);
+          });
+        },
+      });
+      destroyQuietly(session);
+    } catch (e) {
+      const status = await this.status();
+      return status.state === "available"
+        ? status
+        : { ...status, reason: `download_error:${errName(e)}` };
+    }
+    return this.status();
+  }
+
   async isConsentDialog(b: SerialisedBanner): Promise<AiResult<boolean>> {
     return this.ask("gate", gateInput(b), [GATE_SCHEMA], yesNo);
   }

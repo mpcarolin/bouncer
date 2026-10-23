@@ -9,6 +9,11 @@ export interface FakeOptions {
   /** `"never"` makes availability() hang forever. */
   availability?: LanguageModelAvailability | "never";
   createMs?: number;
+  /**
+   * `downloadprogress` fractions that `create()` fires at the `monitor` it is given, as Chrome does
+   * while it downloads the model. Once such a create resolves, `availability()` says `available`.
+   */
+  downloadProgress?: number[];
   /** Raw answers in call order; the last repeats. Or a function of the prompt. */
   answers?: string[] | ((input: string, constraint: unknown) => string);
   throwOn?: { create?: Error; clone?: Error; prompt?: Error };
@@ -58,15 +63,24 @@ export function fakeLanguageModel(o: FakeOptions = {}) {
     };
   };
 
+  let availability = o.availability ?? "available";
   const lm: LanguageModelStatic = {
     availability: () =>
-      o.availability === "never"
-        ? new Promise<never>(() => {})
-        : Promise.resolve(o.availability ?? "available"),
+      availability === "never" ? new Promise<never>(() => {}) : Promise.resolve(availability),
     async create(options) {
       state.createCalls.push(options ?? {});
       if (o.throwOn?.create) throw o.throwOn.create;
+      let downloaded = false;
+      if (options?.monitor && o.downloadProgress) {
+        const monitor = new EventTarget();
+        options.monitor(monitor);
+        for (const loaded of o.downloadProgress) {
+          monitor.dispatchEvent(Object.assign(new Event("downloadprogress"), { loaded }));
+        }
+        downloaded = true;
+      }
       if (o.createMs) await new Promise((r) => setTimeout(r, o.createMs));
+      if (downloaded) availability = "available";
       return session();
     },
   };
