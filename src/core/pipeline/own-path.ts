@@ -54,7 +54,10 @@ export interface PageDeps {
 
 type Draft = Omit<LogEntry, "id">;
 
-/** How one candidate's run ended. `not_consent` is the only ending that keeps the page open. */
+/**
+ * How one candidate's run ended. `not_consent` and `model_unavailable` end that candidate only
+ * and keep the page open (§2g's terminal list has neither); every other ending is the page's.
+ */
 interface Ending {
   outcome: Outcome;
   reason?: string;
@@ -98,6 +101,9 @@ const DISMISSED = new Set<Outcome>([
 const MODEL_REASONS = new Set(["model_timeout", "model_error"]);
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** An ending that is the page's decision, after which no candidate is handled (§2g). */
+const isTerminal = (o: Outcome) => o !== "not_consent" && o !== "model_unavailable";
 
 function isResult(r: unknown): r is AiResult<unknown> {
   if (typeof r !== "object" || r === null) return false;
@@ -148,8 +154,9 @@ function absentTarget(
  */
 export class OwnPath {
   /**
-   * The page's terminal decision, as logged. It never settles on a page with no candidate, or
-   * one autoconsent claimed before Bouncer had a candidate in hand.
+   * The page's terminal decision, as logged. It never settles on a page without one: no
+   * candidate, only `not_consent` or `model_unavailable` ones, or autoconsent claimed the page
+   * before Bouncer had a candidate in hand.
    */
   readonly done: Promise<LogEntry>;
   private resolveDone!: (e: LogEntry) => void;
@@ -171,7 +178,10 @@ export class OwnPath {
   private acDetected = false;
   /** autoconsent's detection ended with nothing found: the claim wait can end early. */
   private acEnded = false;
-  private acOutcomeSeen = false;
+  /** A dismissed `acOutcome` has been through `tryUnlock`: later ones are ignored. */
+  private acUnlockTried = false;
+  /** The page's one `model_unavailable` entry has been logged. */
+  private unavailableLogged = false;
 
   constructor(private readonly d: PageDeps) {
     this.clock = d.clock ?? realClock;
@@ -209,6 +219,7 @@ export class OwnPath {
           this.scroll.freeze();
           if (this.claimed || this.acDetected) return;
           this.acDetected = true;
+          this.queue.clear();
           this.wake();
           // With a candidate in hand the run ends `deferred` itself; otherwise there is nothing
           // of Bouncer's to log.
@@ -222,9 +233,10 @@ export class OwnPath {
           if (!this.claimed) this.scroll.markAction();
           return;
         case "acOutcome":
-          // Re-sent after a worker restart, or once per frame of a multi-frame CMP: the first acts.
-          if (this.claimed || this.acOutcomeSeen) return;
-          this.acOutcomeSeen = true;
+          // Re-sent after a worker restart, or once per frame of a multi-frame CMP: the first
+          // dismissed one acts. A `failed` can still be followed by `dismissed_late`.
+          if (this.claimed || this.acUnlockTried || !DISMISSED.has(m.outcome)) return;
+          this.acUnlockTried = true;
           this.scroll.tryUnlock(m.outcome, this.overlayShowing([]));
           return;
         default:
@@ -266,7 +278,7 @@ export class OwnPath {
   // --- candidates, one at a time ---
 
   private enqueue(c: Candidate): void {
-    if (this.finished) return;
+    if (this.finished || this.acDetected) return;
     this.queue.set(c.el, { c, found: this.clock.now() });
     void this.drain();
   }
@@ -322,14 +334,15 @@ export class OwnPath {
   }
 
   private async run(r: Run): Promise<Ending> {
+    if (this.acDetected) return { outcome: "deferred", reason: "autoconsent_detected" };
     const ser = serialise(r.c, clickability);
     // §2b: wait up to CLAIM_WAIT_MS from finding the candidate, unless autoconsent's detection
     // ends first. The model calls run during the wait.
     const waited = this.claimWait();
     const v = await this.verdict(r, ser.banner);
     r.entry.t.decided = this.clock.now();
-    if ("end" in v && v.end.outcome === "not_consent") return v.end;
-    // Every other ending waits too, so autoconsent detecting the page in time means `deferred`.
+    if ("end" in v && !isTerminal(v.end.outcome)) return v.end;
+    // Every page ending waits too, so autoconsent detecting the page in time means `deferred`.
     await waited;
     if (this.stopped) return { outcome: "deferred", reason: "stopped" };
     if (this.acDetected) return { outcome: "deferred", reason: "autoconsent_detected" };
@@ -363,6 +376,8 @@ export class OwnPath {
         ? this.model(r, "labelControls", () => this.d.ai.labelControls(banner, unlabelled))
         : undefined,
     ]);
+    // autoconsent took the page while the model was asked: no labelling, no corroboration.
+    if (this.acDetected) return { end: { outcome: "deferred", reason: "autoconsent_detected" } };
     if (gate.kind !== "answer") return { end: modelEnding(gate) };
     if (gate.value === false) {
       r.entry.gate = "other";
@@ -431,8 +446,9 @@ export class OwnPath {
 
     this.scroll.freeze();
     r.restoreFocus = captureFocus(this.d.doc);
-    this.hider.hide(r.c.el, r.c.root);
+    // Before hiding, so a throw part-way through still puts back whatever was hidden.
     r.acted = true;
+    this.hider.hide(r.c.el, r.c.root);
     this.scroll.markAction();
     const nav = new NavigationWatch(this.d.win);
     let click: ReturnType<typeof safeClick>;
@@ -508,14 +524,23 @@ export class OwnPath {
     r.entry.outcome = outcome;
     if (end.reason !== undefined) r.entry.reason = end.reason;
     if (outcome === "deferred") r.entry.path = "deferred";
-    const terminal = outcome !== "not_consent";
-    if (!terminal) {
+    const terminal = isTerminal(outcome);
+    if (outcome === "not_consent") {
       this.watcher?.reject(r.c);
       this.notConsent.push(r.c);
-      // autoconsent took the page while this candidate was being judged.
-      if (this.acDetected) this.standDown();
+    } else if (outcome === "model_unavailable") {
+      // Not judged, so not a not_consent overlay: it must not pause the scroll record or block
+      // an unlock. It is only remembered so that it isn't handled again on every mutation.
+      this.watcher?.reject(r.c);
     } else {
       this.standDown();
+    }
+    // autoconsent took the page while this candidate was being handled.
+    if (!terminal && this.acDetected) this.standDown();
+    // One `model_unavailable` entry per page, however many candidates the fast path passed on.
+    if (outcome === "model_unavailable") {
+      if (this.unavailableLogged) return;
+      this.unavailableLogged = true;
     }
 
     const entry = { ...r.entry, notes: [...r.entry.notes] };

@@ -14,7 +14,7 @@ import {
   fakeBackground,
   fakeContent,
 } from "../helpers/fake-platform.ts";
-import { mountPage, unmountAll } from "../helpers/mount.ts";
+import { mount, mountPage, unmountAll } from "../helpers/mount.ts";
 
 declare global {
   interface Window {
@@ -243,13 +243,43 @@ describe("OwnPath, stage 1", () => {
     const banner = byId("cookie-link");
     const h = await start({ provider: new Unavailable() });
 
-    const e = await h.path.done;
-    expect(e).toMatchObject({ outcome: "model_unavailable", clicked: [], modelCalls: [] });
+    await until(async () => (await h.entries()).length === 1);
+    const [e] = await h.entries();
+    expect(e).toMatchObject({
+      outcome: "model_unavailable",
+      path: "heuristic",
+      gate: "skipped",
+      clicked: [],
+      modelCalls: [],
+    });
     expect(h.provider.calls).toEqual([]);
     expect(h.clicks).toEqual([]);
     expect(h.hidden).toEqual([]);
     expect(banner.isConnected).toBe(true);
     expect(window.__clicked).toBeUndefined();
+  });
+
+  test("model unavailable is per candidate: a login wall first, then a banner the fast path takes", async () => {
+    // Neither offers a reject button: the login wall's text even matches autoconsent's "by
+    // continuing … privacy" pattern. Both end model_unavailable, which is logged once.
+    mountPage("login-wall");
+    mountPage("reject-link");
+    const login = byId("login");
+    const link = byId("cookie-link");
+    const h = await start({ provider: new Unavailable() });
+    await until(async () => (await h.entries()).length >= 1);
+    await sleep(200); // both candidates handled, the page still open
+
+    mountPage("custom-reject");
+    const e = await h.path.done;
+    expect(e).toMatchObject({ outcome: "dismissed", path: "heuristic", modelCalls: [] });
+    expect(window.__clicked).toBe("reject");
+    expect((await h.entries()).map((x) => x.outcome)).toEqual(["model_unavailable", "dismissed"]);
+    expect(h.hidden).toEqual([expect.any(HTMLElement)]);
+    expect(h.hidden).not.toContain(login);
+    expect(h.hidden).not.toContain(link);
+    expect(h.clicks.every((el) => !login.contains(el) && !link.contains(el))).toBe(true);
+    expect(h.provider.calls).toEqual([]);
   });
 
   test("login wall then cookie banner: first not_consent, second dismissed", async () => {
@@ -380,6 +410,21 @@ describe("OwnPath, stage 1", () => {
     expect(await h.app.arbiter.owner(1)).toBe("none"); // never claimed
   });
 
+  test("acDetected during the gate → deferred before the labels are used: no corroboration", async () => {
+    mountPage("continue-to-site"); // "Continue to site" would need corroborating
+    const provider = new Counting();
+    let bg: FakeBackground | undefined;
+    provider.onCall = (op) => {
+      if (op === "isConsentDialog") void bg?.sendToFrame(1, 0, { type: "acDetected" });
+    };
+    const h = await start({ provider, before: (x) => void (bg = x.bg) });
+
+    const e = await h.path.done;
+    expect(e).toMatchObject({ outcome: "deferred", reason: "autoconsent_detected" });
+    expect(h.provider.calls).toEqual(["isConsentDialog", "labelControls"]);
+    expect(h.clicks).toEqual([]);
+  });
+
   test("claim refused → deferred", async () => {
     mountPage("custom-reject");
     // autoconsent took the page first; its notice to the frame never arrived.
@@ -462,6 +507,49 @@ describe("OwnPath, stage 1", () => {
       unmountAll();
       for (const t of teardown.splice(0)) t();
     }
+  });
+
+  test("banner re-rendered before the claim → unsure stale_target, and no claim is made", async () => {
+    mountPage("custom-reject");
+    const provider = new Counting();
+    // The site swaps in a new copy of the banner while the gate is being asked.
+    provider.onCall = (op) => {
+      if (op !== "isConsentDialog") return;
+      const old = byId("my-cookie-notice");
+      old.replaceWith(old.cloneNode(true));
+    };
+    const h = await start({ provider });
+
+    const e = await h.path.done;
+    expect(e).toMatchObject({ outcome: "unsure", reason: "stale_target", clicked: [] });
+    expect(await h.app.arbiter.owner(1)).toBe("none");
+    expect(h.clicks).toEqual([]);
+    expect(h.hidden).toEqual([]);
+    expect(window.__clicked).toBeUndefined();
+  });
+
+  test("banner re-rendered after the click → failed came_back", async () => {
+    mountPage("custom-reject");
+    const banner = byId("my-cookie-notice");
+    const parent = banner.parentElement as Element;
+    const copy = banner.cloneNode(true) as Element;
+    // The page removes the banner on the click, then renders it again as a new element.
+    banner.querySelectorAll("button")[1]?.addEventListener("click", () => {
+      setTimeout(() => parent.append(copy), 50);
+    });
+    const h = await start();
+
+    const e = await h.path.done;
+    expect(e).toMatchObject({
+      outcome: "failed",
+      reason: "came_back",
+      verification: "came_back",
+      clicked: [{ text: "Reject all" }],
+    });
+    expect(window.__clicked).toBe("reject");
+    expect(copy.isConnected).toBe(true);
+    expect(copy.hasAttribute(HIDDEN)).toBe(false);
+    expect(e.t.gone).toBeUndefined();
   });
 
   test("banner re-rendered after decision, before click → unsure stale_target", async () => {
@@ -551,6 +639,23 @@ describe("OwnPath, stage 1", () => {
     expect(e).toMatchObject({ outcome: "unsure", reason: "settings_not_implemented" });
     expect(h.clicks).toEqual([]);
     expect(h.hidden).toEqual([]);
+  });
+
+  test("acOutcome: a failed one doesn't use up the unlock; dismissed_late then unlocks, once", async () => {
+    mount('<div style="height:5000px"></div>');
+    const h = await start();
+    document.body.style.overflow = "hidden"; // autoconsent's banner locks scroll
+    const tell = (msg: Parameters<FakeBackground["sendToFrame"]>[2]) => h.bg.sendToFrame(1, 0, msg);
+    await tell({ type: "acDetected" });
+    await tell({ type: "acPopupFound" });
+    await tell({ type: "acOutcome", outcome: "failed" });
+    expect(document.body.style.overflow).toBe("hidden");
+    await tell({ type: "acOutcome", outcome: "dismissed_late" });
+    expect(document.body.style.overflow).toBe("");
+    // A repeat (a worker restart re-sends it) is ignored.
+    document.body.style.overflow = "hidden";
+    await tell({ type: "acOutcome", outcome: "dismissed_late" });
+    expect(document.body.style.overflow).toBe("hidden");
   });
 
   test("a dismissal restores the scroll the banner locked", async () => {
