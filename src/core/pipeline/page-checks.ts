@@ -13,10 +13,10 @@ function within(inner: Element, outer: Element): boolean {
 }
 
 /**
- * The decided-on control is still in the banner, still visible, and reads as it did when the
- * banner was serialised. A re-rendered banner fails this, so a stale decision is never clicked.
+ * The decided-on control is still in the banner (or panel), still visible, and reads as it did
+ * when it was serialised. A re-rendered banner fails this, so a stale decision is never clicked.
  */
-export function stillSame(c: Candidate, s: Serialised, id: number): boolean {
+export function stillSame(c: Pick<Candidate, "el">, s: Serialised, id: number): boolean {
   const el = s.elements.get(id);
   const was = s.banner.controls.find((x) => x.id === id);
   if (!el || !was || !c.el.isConnected || !el.isConnected) return false;
@@ -37,14 +37,19 @@ export function stillSame(c: Candidate, s: Serialised, id: number): boolean {
 }
 
 /**
- * The site has put the banner back as a new element: a visible candidate with the acted-on
- * text that is neither one of `verified` nor wraps one (those `verifyDismissed` checks itself).
- * Never throws; an error counts as not reappeared.
+ * The site has put the banner (or the settings panel) back as a new element: a visible candidate
+ * whose text hashes to one of `keys`, the acted-on texts, and that is neither one of `verified`
+ * nor wraps one (those `verifyDismissed` checks itself). Never throws; an error counts as not
+ * reappeared.
  */
-export function reappeared(doc: Document, c: Candidate, verified: readonly Element[]): boolean {
+export function reappeared(
+  doc: Document,
+  keys: ReadonlySet<string>,
+  verified: readonly Element[],
+): boolean {
   try {
     return findCandidates(doc).some(
-      (k) => k.key === c.key && !verified.some((v) => within(v, k.el)),
+      (k) => keys.has(k.key) && !verified.some((v) => within(v, k.el)),
     );
   } catch {
     return false;

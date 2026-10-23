@@ -16,15 +16,22 @@ export function mount(html: string): HTMLElement {
 }
 
 /**
- * Mounts `test/dom/pages/<name>.html`: its `<style>` elements and body contents. Scripts do not
- * run (innerHTML), but inline `on*` handlers work. Returns the container.
+ * Mounts `test/dom/pages/<name>.html`: its `<style>` elements and body contents. Inline `on*`
+ * handlers work, and the page's inline `<script>`s run once, in order (innerHTML alone would
+ * leave them inert), so the functions they declare are globals. Returns the container.
  */
 export function mountPage(name: string): HTMLElement {
   const html = pages[`../dom/pages/${name}.html`];
   if (html === undefined) throw new Error(`no test page "${name}"`);
   const parsed = new DOMParser().parseFromString(html, "text/html");
   const styles = [...parsed.querySelectorAll("style")].map((s) => s.outerHTML).join("");
-  return mount(styles + parsed.body.innerHTML);
+  const box = mount(styles + parsed.body.innerHTML);
+  for (const old of box.querySelectorAll("script")) {
+    const script = document.createElement("script");
+    script.textContent = old.textContent;
+    old.replaceWith(script);
+  }
+  return box;
 }
 
 export function unmountAll(): void {

@@ -12,6 +12,11 @@ export interface Control {
   disabled?: boolean;
   domId?: string;
   absent?: AbsentReason;
+  /**
+   * A toggle the user cannot see (a collapsed section, a hidden tab), serialised only so a save
+   * covers it (§2f.2). Hidden toggles follow every visible control.
+   */
+  hidden?: true;
 }
 
 export interface SerialisedBanner {

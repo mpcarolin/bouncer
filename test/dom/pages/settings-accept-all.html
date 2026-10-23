@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><title>panel saves only by accepting all</title><style>
+body { font: 16px system-ui; margin: 0; } main { padding: 24px; height: 3000px; }
+.banner { position: fixed; left: 0; right: 0; bottom: 0; background: #222; color: #fff; padding: 16px; z-index: 9999; }
+.modal { position: fixed; inset: 10% 20%; background: #fff; border: 1px solid #999; padding: 16px; z-index: 10000; }
+</style></head>
+<body><main><h1>The panel's only save is "Save &amp; accept all"</h1><p>Expected: that control is accept-all and is never clicked; no toggle is touched; failed.</p></main>
+<div class="banner" id="cookie-banner">We use cookies to personalise ads and measure traffic.
+  <button onclick="document.getElementById('cookie-banner').style.display='none'; document.getElementById('cookie-panel').style.display='block'">Cookie settings</button> <button onclick="window.__clicked='accept'; this.parentElement.remove()">Accept all</button></div>
+<div class="modal" id="cookie-panel" style="display:none" role="dialog" aria-label="Cookie preferences">
+  <h2>Cookie preferences</h2>
+  <label><input type="checkbox" id="aa-ana" checked> Analytics cookies</label><br>
+  <label><input type="checkbox" id="aa-ads" checked> Advertising cookies</label><br>
+  <button id="aa-save" onclick="window.__clicked='save-accept-all'; document.getElementById('cookie-panel').style.display='none'">Save &amp; accept all</button>
+</div>
+</body></html>

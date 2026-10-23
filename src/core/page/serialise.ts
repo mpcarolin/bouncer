@@ -82,14 +82,19 @@ function ariaLabelledBy(el: Element): string {
     .join(" ");
 }
 
-function visibleText(el: Element): string {
+/**
+ * A control's text as the user sees it. A toggle the user cannot see has no rendered text, so
+ * its labels' text is read whether or not they are rendered.
+ */
+function visibleText(el: Element, shown: boolean): string {
   if (el instanceof HTMLInputElement && (el.type === "button" || el.type === "submit")) {
     return el.value;
   }
   if (isToggle(el)) {
+    const read = shown ? textOf : (n: Element) => n.textContent ?? "";
     const labels = (el as HTMLInputElement).labels;
-    const fromLabels = labels ? [...labels].map((l) => textOf(l)).join(" ") : "";
-    return collapse(fromLabels) || collapse(ariaLabelledBy(el)) || textOf(el);
+    const fromLabels = labels ? [...labels].map(read).join(" ") : "";
+    return collapse(fromLabels) || collapse(ariaLabelledBy(el)) || collapse(read(el));
   }
   return textOf(el);
 }
@@ -109,16 +114,34 @@ function toggleDisabled(el: Element): boolean {
   );
 }
 
-/** Controls in document order, shadow roots included, with nested matches dropped (outermost wins). */
-function controlElements(root: Element): Element[] {
-  const all = deepAll(root, CONTROL_SEL).filter(isVisibleControl);
-  const set = new Set(all);
-  return all.filter((el) => {
+/**
+ * Visible controls in document order, shadow roots included, with nested matches dropped
+ * (outermost wins); then, if asked, the toggles that are not visible, in document order.
+ */
+function controlElements(root: Element, hiddenToggles: boolean): { el: Element; shown: boolean }[] {
+  const all = deepAll(root, CONTROL_SEL).flatMap((el) => {
+    const shown = isVisibleControl(el);
+    return shown || (hiddenToggles && isToggle(el)) ? [{ el, shown }] : [];
+  });
+  // Only a non-toggle drops what it contains: hidden toggles leave the visible list as it was.
+  const set = new Set(all.map((x) => x.el));
+  const kept = all.filter(({ el }) => {
     for (let p = el.parentElement; p && p !== root; p = p.parentElement) {
       if (set.has(p) && !isToggle(p)) return false;
     }
     return true;
   });
+  return [...kept.filter((x) => x.shown), ...kept.filter((x) => !x.shown)];
+}
+
+export interface SerialiseOptions {
+  /**
+   * Also serialise the toggles the user cannot see (collapsed sections, hidden tabs), marked
+   * `hidden`, after every visible control: the visible controls keep the ids a plain
+   * serialisation gives them. For save decisions (§2f.2); off by default, so detection and the
+   * gate see only what is shown.
+   */
+  hiddenToggles?: boolean;
 }
 
 /**
@@ -129,15 +152,18 @@ function controlElements(root: Element): Element[] {
  * §0 catches that at click time.)
  */
 export function serialise(
-  c: Candidate,
+  c: Pick<Candidate, "el">,
   clickability: (el: Element) => AbsentReason | null,
+  opts: SerialiseOptions = {},
 ): Serialised {
   const elements = new Map<number, Element>();
   const controls: Control[] = [];
-  for (const el of controlElements(c.el)) {
+  for (const { el, shown } of controlElements(c.el, opts.hiddenToggles === true)) {
     const id = controls.length;
     const role = roleOf(el);
-    const control: Control = { id, role, text: cap(collapse(visibleText(el)), CONTROL_TEXT_CHARS) };
+    const text = cap(collapse(visibleText(el, shown)), CONTROL_TEXT_CHARS);
+    const control: Control = { id, role, text };
+    if (!shown) control.hidden = true;
     const aria = el.getAttribute("aria-label")?.trim();
     if (aria) control.ariaLabel = aria;
     const title = el.getAttribute("title")?.trim();

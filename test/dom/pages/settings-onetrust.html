@@ -1,0 +1,28 @@
+<!doctype html><html><head><meta charset="utf-8"><title>OneTrust-style preference centre</title><style>
+body { font: 16px system-ui; margin: 0; } main { padding: 24px; height: 3000px; }
+.banner { position: fixed; left: 0; right: 0; bottom: 0; background: #222; color: #fff; padding: 16px; z-index: 9999; }
+.modal { position: fixed; inset: 10% 20%; background: #fff; border: 1px solid #999; padding: 16px; z-index: 10000; }
+</style></head>
+<body><main><h1>OneTrust-style: the banner vanishes when the preference centre opens</h1><p>Expected: settings → Performance and Targeting off → "Confirm My Choices". The preference centre closes after an animation; verification waits for it, not just for the banner.</p></main>
+<div id="onetrust-consent-sdk">
+  <div class="banner" id="onetrust-banner-sdk">We use cookies to improve your experience, to measure traffic and for advertising.
+    <button id="onetrust-pc-btn-handler" onclick="otOpen()">Cookie Settings</button> <button id="onetrust-accept-btn-handler" onclick="otSave(true)">Accept All Cookies</button></div>
+  <div class="modal" id="onetrust-pc-sdk" style="display:none" role="dialog" aria-modal="true" aria-label="Privacy Preference Center">
+    <h2>Privacy Preference Center</h2>
+    <p>When you visit any website, it may store or retrieve information on your browser, mostly in the form of cookies.</p>
+    <div>Strictly Necessary Cookies <span>Always Active</span></div>
+    <label><input type="checkbox" id="ot-perf" checked> Performance Cookies</label><br>
+    <label><input type="checkbox" id="ot-tgt" checked> Targeting Cookies</label><br>
+    <button id="accept-recommended-btn-handler" onclick="otSave(true)">Allow All</button> <button class="save-preference-btn-handler" onclick="otSave(false)">Confirm My Choices</button>
+  </div>
+</div>
+<script>
+window.otCloseMs = 150; // the preference centre's closing animation; below 0 it never closes
+function otOpen(){ document.getElementById('onetrust-banner-sdk').style.display='none'; document.getElementById('onetrust-pc-sdk').style.display='block'; }
+function otSave(all){
+  window.otConsent = all ? 'all' : ['perf','tgt'].map(function(k){ return k+'='+document.getElementById('ot-'+k).checked; }).join(',');
+  document.getElementById('onetrust-banner-sdk').style.display='none';
+  if (window.otCloseMs < 0) return;
+  setTimeout(function(){ document.getElementById('onetrust-pc-sdk').style.display='none'; window.otClosedAt = Date.now(); }, window.otCloseMs);
+}
+</script></body></html>

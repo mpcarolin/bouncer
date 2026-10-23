@@ -1,13 +1,14 @@
-// Bouncer's own path, stage 1 (§2a–g), in the top frame: watch for candidates, gate each with the
-// AI, label and choose deterministically, claim the page from the background's arbiter, then
-// hide, click, verify, unlock scroll and log. One terminal decision per page.
+// Bouncer's own path (§2a–g), in the top frame: watch for candidates, gate each with the AI,
+// label and choose deterministically, claim the page from the background's arbiter, then hide,
+// act (a click, a save with toggles, or the settings hop of settings-hop.ts), verify, unlock
+// scroll and log. One terminal decision per page.
 import type { AiProvider, AiResult, AiStatus } from "../ai.ts";
-import { type ChooseOpts, choose, type Corroboration, decide } from "../choose.ts";
+import { type ChooseOpts, choose, type Corroboration, decide, MODEL_REASONS } from "../choose.ts";
 import { CLAIM_WAIT_MS } from "../config.ts";
 import { labelDeterministic, mergeAiLabels } from "../label.ts";
 import type { LogEntry } from "../log.ts";
 import type { ReplyOf, ToBackground, ToContent } from "../messages.ts";
-import { captureFocus, NavigationWatch, safeClick } from "../page/click.ts";
+import { type ClickResult, captureFocus, NavigationWatch, safeClick } from "../page/click.ts";
 import { clickability } from "../page/clickable.ts";
 import { type Candidate, CandidateWatcher } from "../page/detect.ts";
 import { isVisible } from "../page/dom.ts";
@@ -34,6 +35,13 @@ import {
   reappeared,
   stillSame,
 } from "./page-checks.ts";
+import {
+  type Actions,
+  type HopDeps,
+  saveWithToggles,
+  settingsHop,
+  withHiddenToggles,
+} from "./settings-hop.ts";
 
 export interface PageDeps {
   doc: Document;
@@ -50,6 +58,8 @@ export interface PageDeps {
   scroll?: ScrollTracker;
   /** §2g's windows; VERIFY_GONE_MS and VERIFY_STAY_MS by default. For tests. */
   verify?: { goneMs?: number; stayMs?: number };
+  /** §2f.3's wait for the settings panel; PANEL_WAIT_MS by default. For tests. */
+  panel?: { waitMs?: number; pollMs?: number };
 }
 
 type Draft = Omit<LogEntry, "id">;
@@ -72,6 +82,8 @@ interface Run {
   entry: Draft;
   /** Something was hidden or clicked: any ending but a dismissal is now `failed`. */
   acted: boolean;
+  /** The settings panel the hop found, once it has (§2f.3). */
+  panel?: Element;
   restoreFocus?: (touched: Element[]) => void;
   /** The `log` sent when the claim was granted; the ending is patched onto it. */
   logged?: Promise<string | undefined>;
@@ -83,8 +95,10 @@ const realClock: Clock = {
   clearTimeout: (id) => clearTimeout(id),
 };
 
-const DISMISSED_AS: Record<"reject" | "close" | "agree", Outcome> = {
+const DISMISSED_AS: Record<Exclude<Decision["kind"], "no_option" | "unsure">, Outcome> = {
   reject: "dismissed",
+  save: "dismissed",
+  settings: "dismissed",
   close: "dismissed_close",
   agree: "dismissed_agreed",
 };
@@ -96,9 +110,6 @@ const DISMISSED = new Set<Outcome>([
   "dismissed_agreed",
   "dismissed_late",
 ]);
-
-/** Reasons that come from the model, not from the controls: an absent control never explains them. */
-const MODEL_REASONS = new Set(["model_timeout", "model_error"]);
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -121,13 +132,9 @@ const modelEnding = (r: AiResult<unknown>): Ending => ({
   reason: r.kind === "timeout" ? "model_timeout" : "model_error",
 });
 
-/**
- * Task 19's seam: the settings hop (§2f.3) and save-with-toggles (§2f.2). Stage 1 hands both
- * decisions here; until Task 19 replaces this, they end `unsure` with nothing touched.
- */
-function settingsHop(d: Decision): Decision {
-  if (d.kind !== "settings" && d.kind !== "save") return d;
-  return { kind: "unsure", reason: "settings_not_implemented" };
+/** The visible part of a `hiddenToggles` serialisation: what a plain one gives, same ids. */
+function shownOnly(s: Serialised): Serialised {
+  return { ...s, banner: { ...s.banner, controls: s.banner.controls.filter((c) => !c.hidden) } };
 }
 
 /**
@@ -148,7 +155,7 @@ function absentTarget(
 }
 
 /**
- * Stage 1 of Bouncer's own path for one top-frame page. `start()` begins watching; candidates
+ * Bouncer's own path for one top-frame page. `start()` begins watching; candidates
  * are handled one at a time until a terminal outcome. Nothing escapes into the page: every
  * failure ends as `unsure` before an action, or `failed` after one.
  */
@@ -335,7 +342,9 @@ export class OwnPath {
 
   private async run(r: Run): Promise<Ending> {
     if (this.acDetected) return { outcome: "deferred", reason: "autoconsent_detected" };
-    const ser = serialise(r.c, clickability);
+    // The gate, the labeller and the chooser see only what is shown; a save covers the rest.
+    const full = serialise(r.c, clickability, { hiddenToggles: true });
+    const ser = shownOnly(full);
     // §2b: wait up to CLAIM_WAIT_MS from finding the candidate, unless autoconsent's detection
     // ends first. The model calls run during the wait.
     const waited = this.claimWait();
@@ -347,7 +356,7 @@ export class OwnPath {
     if (this.stopped) return { outcome: "deferred", reason: "stopped" };
     if (this.acDetected) return { outcome: "deferred", reason: "autoconsent_detected" };
     if ("end" in v) return v.end;
-    return this.act(r, ser, v.decision, v.aiOnly);
+    return this.act(r, ser, full, v.decision, v.aiOnly);
   }
 
   /** §2c–f: the fast path when the model is unavailable, else the gate, labelling and chooser. */
@@ -390,12 +399,9 @@ export class OwnPath {
     r.entry.gate = "consent";
     let given: Record<number, Label> = {};
     if (labels) {
-      if (labels.kind !== "answer") return { end: modelEnding(labels) };
-      if (typeof labels.value !== "object" || labels.value === null) {
-        r.entry.notes.push("labelControls:malformed_answer");
-        return { end: { outcome: "unsure", reason: "model_error" } };
-      }
-      given = labels.value;
+      const got = this.labelsOf(r, labels);
+      if (typeof got === "string") return { end: { outcome: "unsure", reason: got } };
+      given = got;
     }
 
     const merged = mergeAiLabels(banner, det, given);
@@ -410,7 +416,7 @@ export class OwnPath {
     );
     for (const { id, answer } of res.corroborations)
       r.entry.notes.push(`corroborate:${id}:${answer}`);
-    const decision = settingsHop(res.decision);
+    const decision = res.decision;
     if ("target" in decision) return { decision, aiOnly: res.aiOnlyClick };
 
     const reason = decision.kind === "unsure" ? decision.reason : undefined;
@@ -424,11 +430,18 @@ export class OwnPath {
     return { end: { outcome, reason: missed?.why ?? reason } };
   }
 
-  /** §2b, §2g: claim, hide, click, verify. */
-  private async act(r: Run, ser: Serialised, d: Decision, aiOnly: boolean): Promise<Ending> {
-    if (!("target" in d) || (d.kind !== "reject" && d.kind !== "close" && d.kind !== "agree")) {
-      return { outcome: "unsure", reason: "unexpected_decision" };
-    }
+  /**
+   * §2b, §2f, §2g: claim, hide, act, verify. `full` is the banner serialised with its hidden
+   * toggles, for a save; `ser` is its visible part, what the decision was made on.
+   */
+  private async act(
+    r: Run,
+    ser: Serialised,
+    full: Serialised,
+    d: Decision,
+    aiOnly: boolean,
+  ): Promise<Ending> {
+    if (!("target" in d)) return { outcome: "unsure", reason: "unexpected_decision" };
     const el = ser.elements.get(d.target);
     const control = ser.banner.controls.find((c) => c.id === d.target);
     if (!el || !control || !stillSame(r.c, ser, d.target)) {
@@ -450,28 +463,93 @@ export class OwnPath {
     r.acted = true;
     this.hider.hide(r.c.el, r.c.root);
     this.scroll.markAction();
-    const nav = new NavigationWatch(this.d.win);
-    let click: ReturnType<typeof safeClick>;
-    try {
-      click = safeClick(el, nav);
-    } finally {
-      nav.dispose();
+    const actions = this.actions(r);
+    // The texts whose return as a new element means the site put the banner (or panel) back.
+    const keys = new Set([r.c.key]);
+    if (d.kind === "settings") {
+      const hop = await settingsHop({
+        banner: r.c.el,
+        ser,
+        target: d.target,
+        aiOnly,
+        deps: this.hopDeps(r, actions),
+      });
+      if (hop.panel) r.panel = hop.panel;
+      if (!hop.ok) return { outcome: "failed", reason: hop.reason };
+      keys.add(hop.panelKey);
+    } else if (d.kind === "save") {
+      const saved = saveWithToggles(withHiddenToggles(d, full), full, r.c.el, aiOnly, actions);
+      if (!saved.ok) return { outcome: "failed", reason: saved.reason };
+    } else {
+      const click = actions.click(el, control, aiOnly);
+      if (!click.ok) return { outcome: "failed", reason: click.reason };
     }
-    if (click.reason !== "stale_target") {
-      r.entry.clicked.push({ id: d.target, text: control.text, aiOnly });
-    }
-    if (click.hashGuardUsed) r.entry.notes.push("hash_guard");
-    if (!click.ok) return { outcome: "failed", reason: click.reason };
 
-    const v = await this.verify(r);
+    const v = await this.verify(r, keys);
     r.entry.verification = v.ok ? "verified" : v.reason;
     if (!v.ok) return { outcome: "failed", reason: v.reason };
     return { outcome: DISMISSED_AS[d.kind] };
   }
 
-  /** §2g: the banner (which held the clicked control) gone within the window, and staying gone. */
-  private async verify(r: Run): Promise<{ ok: boolean; reason?: string }> {
-    const els = [r.c.el];
+  /** Every click goes through `safeClick` with its own `NavigationWatch`, and into the log. */
+  private actions(r: Run): Actions {
+    return {
+      click: (el, control, aiOnly) => {
+        const nav = new NavigationWatch(this.d.win);
+        let click: ClickResult;
+        try {
+          click = safeClick(el, nav);
+        } finally {
+          nav.dispose();
+        }
+        if (click.reason !== "stale_target") {
+          r.entry.clicked.push({ id: control.id, text: control.text, aiOnly });
+        }
+        if (click.hashGuardUsed) r.entry.notes.push("hash_guard");
+        return click;
+      },
+      toggled: (t) => r.entry.toggles.push(...t),
+    };
+  }
+
+  /** What the settings hop needs from the page: stage-2 model calls are logged like stage 1's. */
+  private hopDeps(r: Run, actions: Actions): HopDeps {
+    return {
+      ...actions,
+      doc: this.d.doc,
+      hider: this.hider,
+      rejected: new Set(this.notConsent.map((c) => c.el)),
+      choose: {
+        closeAction: this.d.settings.closeAction,
+        agreeToDismiss: this.d.settings.agreeToDismiss,
+      },
+      label: async (b, ids) =>
+        this.labelsOf(
+          r,
+          await this.model(r, "labelControls", () => this.d.ai.labelControls(b, ids)),
+        ),
+      corroborate: (b, control, label) => this.corroborate(r, b, control, label),
+      note: (s) => r.entry.notes.push(s),
+      stopped: () => this.stopped,
+      panel: this.d.panel,
+    };
+  }
+
+  /** The banner, and the panel after a hop: what the flow acted on. */
+  private touched(r: Run): Element[] {
+    return r.panel && r.panel !== r.c.el ? [r.c.el, r.panel] : [r.c.el];
+  }
+
+  /**
+   * §2g: the banner and, after a hop, the panel (which held the last clicked control) gone
+   * within the window, and staying gone. In OneTrust-style flows the banner goes as the panel
+   * opens, so the banner alone would pass while the panel is still open.
+   */
+  private async verify(
+    r: Run,
+    keys: ReadonlySet<string>,
+  ): Promise<{ ok: boolean; reason?: string }> {
+    const els = this.touched(r);
     const nav = new NavigationWatch(this.d.win);
     let goneAt: number | undefined;
     try {
@@ -486,7 +564,7 @@ export class OwnPath {
           } catch {
             // only a timing; verification decides
           }
-          return reappeared(this.d.doc, r.c, els);
+          return reappeared(this.d.doc, keys, els);
         },
       });
       if (v.ok) r.entry.t.gone = goneAt ?? this.clock.now();
@@ -507,15 +585,16 @@ export class OwnPath {
         if (DISMISSED.has(outcome)) {
           this.hider.unhideAll();
           r.entry.notes.push(
-            `scroll:${this.scroll.tryUnlock(outcome, this.overlayShowing([r.c.el]))}`,
+            `scroll:${this.scroll.tryUnlock(outcome, this.overlayShowing(this.touched(r)))}`,
           );
         } else if (this.d.settings.onFailed === "restore") {
+          // An open settings panel is the site's own: un-hidden, it is left for the user (§3).
           this.hider.unhideAll();
           r.entry.notes.push("restored");
         } else {
           r.entry.notes.push("kept_hidden");
         }
-        r.restoreFocus?.([r.c.el]);
+        r.restoreFocus?.(this.touched(r));
       }
     } catch (e) {
       r.entry.notes.push(`finish:${message(e)}`);
@@ -620,6 +699,19 @@ export class OwnPath {
     rec.result = res.kind;
     if (res.kind === "error") r.entry.notes.push(`${op}:${res.error}`);
     return res;
+  }
+
+  /** The labeller's answer, or why there is none (a malformed one is an error). */
+  private labelsOf(
+    r: Run,
+    res: AiResult<Record<number, Label>>,
+  ): Record<number, Label> | "model_timeout" | "model_error" {
+    if (res.kind !== "answer") return res.kind === "timeout" ? "model_timeout" : "model_error";
+    if (typeof res.value !== "object" || res.value === null) {
+      r.entry.notes.push("labelControls:malformed_answer");
+      return "model_error";
+    }
+    return res.value;
   }
 
   private async corroborate(

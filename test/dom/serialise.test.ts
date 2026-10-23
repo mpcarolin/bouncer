@@ -94,6 +94,41 @@ describe("serialise", () => {
     expect(banner.controls.map((c) => c.text)).toEqual(["Shown"]);
   });
 
+  it("hiddenToggles: toggles the user cannot see follow the visible controls, text from their labels", () => {
+    const html = `We use cookies.
+      <details><summary>More</summary>
+        <label><input type="checkbox" id="ads" checked> <span>Personalised ads</span></label>
+        <label><input type="checkbox" id="nec" checked disabled> Necessary</label>
+        <button>Hidden button</button>
+      </details>
+      <label><input type="checkbox" id="ana" checked> Analytics</label>
+      <div hidden><input type="checkbox" id="soc" aria-labelledby="soc-l"><span id="soc-l">Social media</span></div>
+      <button>Save</button>`;
+    const plain = ser(html).banner.controls;
+    unmountAll();
+    const { banner, elements } = ser(html, none);
+    const full = serialise({ el: elements.get(0)?.closest("#b") as Element }, none, {
+      hiddenToggles: true,
+    });
+    expect(banner.controls).toEqual(plain); // off by default
+    expect(full.banner.controls.slice(0, plain.length)).toEqual(plain); // same ids, same order
+    expect(full.banner.controls.slice(plain.length)).toEqual([
+      { id: 2, role: "toggle", text: "Personalised ads", hidden: true, on: true, domId: "ads" },
+      {
+        id: 3,
+        role: "toggle",
+        text: "Necessary",
+        hidden: true,
+        on: true,
+        disabled: true,
+        domId: "nec",
+      },
+      { id: 4, role: "toggle", text: "Social media", hidden: true, on: false, domId: "soc" },
+    ]);
+    expect(full.elements.get(4)?.id).toBe("soc");
+    expect(full.banner.text).toBe(banner.text);
+  });
+
   it("serialises controls inside a shadow root", () => {
     const box = mount("<div id='host'></div>");
     const root = box.querySelector("#host")?.attachShadow({ mode: "open" }) as ShadowRoot;

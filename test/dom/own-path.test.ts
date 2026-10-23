@@ -1,201 +1,23 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { MockProvider } from "../../src/ai/mock/provider.ts";
-import type { AiProvider, AiResult, AiStatus } from "../../src/core/ai.ts";
-import { RemoteAiProvider } from "../../src/core/ai-remote.ts";
-import { type BackgroundApp, startBackground } from "../../src/core/background-app.ts";
-import type { LogEntry } from "../../src/core/log.ts";
-import { OwnPath } from "../../src/core/pipeline/own-path.ts";
+import type { AiProvider, AiResult } from "../../src/core/ai.ts";
 import type { ContentPlatform } from "../../src/core/platform.ts";
-import { DEFAULT_SETTINGS, type Settings } from "../../src/core/settings.ts";
-import type { Clock, Control, Label, SerialisedBanner } from "../../src/core/types.ts";
-import {
-  type FakeBackground,
-  type FakeContent,
-  fakeBackground,
-  fakeContent,
-} from "../helpers/fake-platform.ts";
+import type { FakeBackground } from "../helpers/fake-platform.ts";
 import { mount, mountPage, unmountAll } from "../helpers/mount.ts";
+import {
+  Agreeable,
+  byId,
+  Counting,
+  cleanup,
+  HIDDEN,
+  sleep,
+  start,
+  stopAll,
+  Unavailable,
+  until,
+} from "../helpers/pipeline.ts";
 
-declare global {
-  interface Window {
-    __clicked?: string;
-    __chatClicked?: string;
-  }
-}
-
-/** Real timers, ten times faster: the claim wait is 150 ms and detection watches for 2 s. */
-const fastClock: Clock = {
-  now: () => Date.now(),
-  setTimeout: (fn, ms) => window.setTimeout(fn, ms / 10),
-  clearTimeout: (id) => window.clearTimeout(id),
-};
-const VERIFY = { goneMs: 500, stayMs: 200 };
-const HIDDEN = "data-bouncer-hidden";
-
-/** MockProvider that records every model call (not `status`) and can run a hook on each. */
-class Counting extends MockProvider {
-  calls: string[] = [];
-  onCall?: (op: string) => void;
-
-  private note(op: string) {
-    this.calls.push(op);
-    this.onCall?.(op);
-  }
-
-  override isConsentDialog(b: SerialisedBanner) {
-    this.note("isConsentDialog");
-    return super.isConsentDialog(b);
-  }
-
-  override labelControls(b: SerialisedBanner, ids: number[]) {
-    this.note("labelControls");
-    return super.labelControls(b, ids);
-  }
-
-  override corroborate(b: SerialisedBanner, c: Control, l: "reject" | "save" | "settings") {
-    this.note("corroborate");
-    return super.corroborate(b, c, l);
-  }
-}
-
-/** The model is not available: only the fast path may act. */
-class Unavailable extends Counting {
-  override async status(): Promise<AiStatus> {
-    return { state: "unavailable", reason: "test", onDevice: true };
-  }
-}
-
-/** Corroborates every AI-only label, and reports the gate's call as a cold start. */
-class Agreeable extends Counting {
-  override async isConsentDialog(b: SerialisedBanner): Promise<AiResult<boolean>> {
-    const r = await super.isConsentDialog(b);
-    return { ...r, meta: { ...r.meta, ms: 9, cold: true } };
-  }
-
-  override async labelControls(
-    b: SerialisedBanner,
-    ids: number[],
-  ): Promise<AiResult<Record<number, Label>>> {
-    const r = await super.labelControls(b, ids);
-    return { ...r, meta: { ...r.meta, ms: 5 } };
-  }
-
-  override async corroborate(
-    b: SerialisedBanner,
-    c: Control,
-    l: "reject" | "save" | "settings",
-  ): Promise<AiResult<boolean>> {
-    await super.corroborate(b, c, l);
-    return { kind: "answer", value: true, meta: { ms: 4, cold: false, onDevice: true } };
-  }
-}
-
-interface Harness {
-  bg: FakeBackground;
-  app: BackgroundApp;
-  content: FakeContent;
-  provider: Counting;
-  path: OwnPath;
-  /** Every element clicked while the harness ran (Bouncer is the only clicker in these tests). */
-  clicks: Element[];
-  /** Every element that was given Bouncer's hiding attribute. */
-  hidden: Element[];
-  /** Errors and rejections that reached the page. */
-  escaped: unknown[];
-  entries(): Promise<LogEntry[]>;
-}
-
-interface StartOpts {
-  provider?: Counting;
-  settings?: Partial<Settings>;
-  /** Runs after `hello`, before the pipeline starts. */
-  before?: (h: { bg: FakeBackground; app: BackgroundApp; content: FakeContent }) => unknown;
-  /** Wraps the content platform the pipeline talks through. */
-  platform?: (content: FakeContent) => ContentPlatform;
-  /** The pipeline's AI, in place of `RemoteAiProvider` over the fake background. */
-  ai?: AiProvider;
-}
-
-const teardown: (() => void)[] = [];
-
-afterEach(() => {
-  for (const t of teardown.splice(0)) t();
-  unmountAll();
-  for (const s of document.querySelectorAll("style[data-bouncer]")) s.remove();
-  delete window.__clicked;
-  delete window.__chatClicked;
-  document.body.style.removeProperty("overflow");
-});
-
-async function start(o: StartOpts = {}): Promise<Harness> {
-  const bg = fakeBackground();
-  const provider = o.provider ?? new Counting();
-  const app = startBackground(bg, provider);
-  const content = fakeContent(bg);
-  // The content entry's hello: it records the page with the arbiter, so a claim can be granted.
-  await content.send({ type: "hello" });
-  await o.before?.({ bg, app, content });
-
-  const clicks: Element[] = [];
-  const hidden: Element[] = [];
-  const escaped: unknown[] = [];
-  const onClick = (e: Event) => clicks.push(e.composedPath()[0] as Element);
-  const onError = (e: ErrorEvent) => escaped.push(e.error ?? e.message);
-  const onRejection = (e: PromiseRejectionEvent) => escaped.push(e.reason);
-  document.addEventListener("click", onClick, true);
-  window.addEventListener("error", onError);
-  window.addEventListener("unhandledrejection", onRejection);
-  const mo = new MutationObserver((records) => {
-    for (const r of records) if (r.oldValue === null) hidden.push(r.target as Element);
-  });
-  mo.observe(document, {
-    subtree: true,
-    attributes: true,
-    attributeFilter: [HIDDEN],
-    attributeOldValue: true,
-  });
-
-  const path = new OwnPath({
-    doc: document,
-    win: window,
-    platform: o.platform?.(content) ?? content,
-    ai: o.ai ?? new RemoteAiProvider(content),
-    settings: { ...DEFAULT_SETTINGS, ...o.settings },
-    clock: fastClock,
-    verify: VERIFY,
-  });
-  teardown.push(() => {
-    path.stop();
-    mo.disconnect();
-    document.removeEventListener("click", onClick, true);
-    window.removeEventListener("error", onError);
-    window.removeEventListener("unhandledrejection", onRejection);
-  });
-  path.start();
-  return {
-    bg,
-    app,
-    content,
-    provider,
-    path,
-    clicks,
-    hidden,
-    escaped,
-    entries: () => app.log.list(),
-  };
-}
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-async function until(cond: () => boolean | Promise<boolean>, ms = 3000): Promise<void> {
-  const end = Date.now() + ms;
-  while (!(await cond())) {
-    if (Date.now() > end) throw new Error("condition not met in time");
-    await sleep(10);
-  }
-}
-
-const byId = (id: string) => document.getElementById(id) as HTMLElement;
+afterEach(cleanup);
 
 describe("OwnPath, stage 1", () => {
   test("custom reject: gate yes → reject clicked → dismissed, hidden attr removed after", async () => {
@@ -325,7 +147,7 @@ describe("OwnPath, stage 1", () => {
     expect(h.hidden).toEqual([]);
     expect(await h.app.arbiter.owner(1)).toBe("none"); // nothing to act on, so no claim
     unmountAll();
-    for (const t of teardown.splice(0)) t();
+    stopAll();
 
     mountPage("agree-only");
     h = await start({ settings: { agreeToDismiss: true } });
@@ -344,7 +166,7 @@ describe("OwnPath, stage 1", () => {
     expect(e).toMatchObject({ outcome: "dismissed_close", clicked: [{ text: "×" }] });
     expect(window.__clicked).toBe("close");
     unmountAll();
-    for (const t of teardown.splice(0)) t();
+    stopAll();
     delete window.__clicked;
 
     mountPage("close-only");
@@ -371,7 +193,7 @@ describe("OwnPath, stage 1", () => {
     expect(banner.hasAttribute(HIDDEN)).toBe(false);
     expect(document.querySelector("style[data-bouncer]")).toBeNull();
     unmountAll();
-    for (const t of teardown.splice(0)) t();
+    stopAll();
 
     mountPage("broken-reject");
     banner = byId("cookie-broken");
@@ -505,7 +327,7 @@ describe("OwnPath, stage 1", () => {
       await sleep(50);
       expect(h.escaped).toEqual([]);
       unmountAll();
-      for (const t of teardown.splice(0)) t();
+      stopAll();
     }
   });
 
@@ -630,15 +452,6 @@ describe("OwnPath, stage 1", () => {
     expect(window.__clicked).toBe("proceed");
     // What the background stored is what `done` reports.
     expect(await h.entries()).toEqual([e]);
-  });
-
-  test("a settings decision ends unsure settings_not_implemented until Task 19", async () => {
-    mountPage("custom-settings");
-    const h = await start();
-    const e = await h.path.done;
-    expect(e).toMatchObject({ outcome: "unsure", reason: "settings_not_implemented" });
-    expect(h.clicks).toEqual([]);
-    expect(h.hidden).toEqual([]);
   });
 
   test("acOutcome: a failed one doesn't use up the unlock; dismissed_late then unlocks, once", async () => {

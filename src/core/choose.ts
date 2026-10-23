@@ -28,6 +28,23 @@ function preferButton(entries: Entry[]): Entry | undefined {
   return entries.find((e) => e.control.role === "button") ?? entries[0];
 }
 
+/**
+ * §2f.2 step 1: every toggle-optional that is on goes off, every toggle-optout that is off goes
+ * on. Disabled toggles, and controls that are not toggles, are left alone.
+ */
+export function toggleChanges(
+  controls: readonly Control[],
+  labels: ReadonlyMap<number, Labelled | null>,
+): { id: number; to: boolean }[] {
+  return controls.flatMap((c): { id: number; to: boolean }[] => {
+    const label = labels.get(c.id)?.label;
+    if (c.role !== "toggle" || c.disabled) return [];
+    if (label === "toggle-optional" && c.on) return [{ id: c.id, to: false }];
+    if (label === "toggle-optout" && c.on === false) return [{ id: c.id, to: true }];
+    return [];
+  });
+}
+
 /** §2f over labelled controls. Pure; never touches the AI. */
 export function choose(
   b: SerialisedBanner,
@@ -58,15 +75,10 @@ export function choose(
     const listed = saves.filter((e) => isAllowListed(textSources(e.control)));
     const pick = saves.length === 1 ? saves[0] : listed.length === 1 ? listed[0] : undefined;
     if (!pick) return { kind: "unsure", reason: "ambiguous_save" };
-    const changes = toggles.flatMap(({ control, labelled }) => {
-      if (control.disabled) return [];
-      if (labelled.label === "toggle-optional" && control.on)
-        return [{ id: control.id, to: false }];
-      if (labelled.label === "toggle-optout" && control.on === false) {
-        return [{ id: control.id, to: true }];
-      }
-      return [];
-    });
+    const changes = toggleChanges(
+      toggles.map((e) => e.control),
+      labels,
+    );
     return { kind: "save", target: pick.control.id, toggles: changes };
   }
 
@@ -107,6 +119,9 @@ export function choose(
 }
 
 const NEEDS_CORROBORATION = new Set<Label>(["reject", "save", "settings"]);
+
+/** `unsure` reasons that come from the model, not from the controls (a corroboration's, say). */
+export const MODEL_REASONS: ReadonlySet<string> = new Set(["model_timeout", "model_error"]);
 
 /** `choose`, with §2e's corroboration of any AI-only reject, save or settings target. */
 export async function decide(

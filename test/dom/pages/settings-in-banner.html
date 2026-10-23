@@ -1,0 +1,11 @@
+<!doctype html><html><head><meta charset="utf-8"><title>toggles in the banner</title><style>
+body { font: 16px system-ui; margin: 0; } main { padding: 24px; height: 3000px; }
+.banner { position: fixed; left: 0; right: 0; bottom: 0; background: #222; color: #fff; padding: 16px; z-index: 9999; }
+.modal { position: fixed; inset: 10% 20%; background: #fff; border: 1px solid #999; padding: 16px; z-index: 10000; }
+</style></head>
+<body><main><h1>Save with toggles in the banner itself</h1><p>Expected: no reject, so stage 1 saves: Analytics and the collapsed Advertising toggle are switched off, then "Save choices" is clicked.</p></main>
+<div class="banner" id="cookie-banner">We use cookies. Choose which ones we may use.
+  <label><input type="checkbox" id="ib-ana" checked> Analytics</label>
+  <details><summary>More</summary><label><input type="checkbox" id="ib-ads" checked> Advertising</label></details>
+  <button onclick="window.__clicked='accept'; this.parentElement.remove()">Accept all</button> <button onclick="window.__consent=['ana','ads'].map(function(k){ return k+'='+document.getElementById('ib-'+k).checked; }).join(','); this.parentElement.remove()">Save choices</button></div>
+</body></html>

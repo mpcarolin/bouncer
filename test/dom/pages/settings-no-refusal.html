@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><title>panel without reject or save</title><style>
+body { font: 16px system-ui; margin: 0; } main { padding: 24px; height: 3000px; }
+.banner { position: fixed; left: 0; right: 0; bottom: 0; background: #222; color: #fff; padding: 16px; z-index: 9999; }
+.modal { position: fixed; inset: 10% 20%; background: #fff; border: 1px solid #999; padding: 16px; z-index: 10000; }
+</style></head>
+<body><main><h1>The settings panel offers neither reject nor save</h1><p>Expected: settings is clicked, the panel has toggles but no save control and no reject, so the outcome is failed; the panel is left visible and nothing else is clicked.</p></main>
+<div class="banner" id="cookie-banner">We use cookies for analytics and advertising.
+  <button onclick="document.getElementById('cookie-banner').style.display='none'; document.getElementById('cookie-panel').style.display='block'">Manage cookies</button> <button onclick="window.__clicked='accept'; this.parentElement.remove()">Accept all</button></div>
+<div class="modal" id="cookie-panel" style="display:none" role="dialog" aria-label="Cookie preferences">
+  <h2>Cookie preferences</h2>
+  <p>These are the cookies we use.</p>
+  <label><input type="checkbox" id="np-ana" checked> Analytics cookies</label><br>
+  <button onclick="window.__clicked='accept'; this.parentElement.remove()">Accept all</button> <button onclick="window.__clicked='back'">Back</button>
+</div>
+</body></html>
