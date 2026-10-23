@@ -35,6 +35,13 @@ describe("chromeBackground storage", () => {
 });
 
 describe("chromeBackground.onMessage", () => {
+  it("also accepts the port autoconsent's content script opens on start, and leaves it open", () => {
+    const fc = installFakeChrome();
+    expect(fc.connect("instance-before").accepted).toBe(false);
+    chromeBackground().onMessage(() => undefined);
+    expect(fc.connect("instance-abc123")).toEqual({ accepted: true, disconnected: false });
+  });
+
   it("hands the handler Chrome's sender as Bouncer's Sender, the frame's URL and the tab's apart", async () => {
     const fc = installFakeChrome();
     const seen: unknown[] = [];
@@ -361,7 +368,13 @@ describe("the background over the Chrome adapters", () => {
   it("registers every listener before startBackground returns", () => {
     const fc = installFakeChrome();
     startBackground(chromeBackground(), provider);
-    expect(fc.listenerCounts()).toEqual({ message: 1, tabRemoved: 1, action: 1, installed: 1 });
+    expect(fc.listenerCounts()).toEqual({
+      message: 1,
+      connect: 1,
+      tabRemoved: 1,
+      action: 1,
+      installed: 1,
+    });
   });
 
   it("answers a content script's hello and claim through chrome.runtime", async () => {

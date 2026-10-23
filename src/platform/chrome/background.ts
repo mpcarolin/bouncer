@@ -58,6 +58,11 @@ export function chromeBackground(): BackgroundPlatform {
     session: chromeKV(chrome.storage.session),
 
     onMessage(h) {
+      // autoconsent's content script also opens a port to the background on start (DuckDuckGo's
+      // own background follows its instances with it). Nothing comes over it that Bouncer needs,
+      // but it must be accepted: with no listener, Chrome fails the connect and logs an unchecked
+      // runtime.lastError in every frame of every page.
+      chrome.runtime.onConnect.addListener(() => {});
       chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         let reply: Promise<unknown> | undefined;
         try {

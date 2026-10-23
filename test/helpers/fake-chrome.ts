@@ -10,6 +10,7 @@ import { vi } from "vitest";
  * - Storage areas keep what `JSON.stringify` keeps, as Chrome does (an `undefined` value is dropped).
  * - `runtime.sendMessage` reaches the `onMessage` listeners with `fc.sender` as the sender, and
  *   rejects when there are none, as Chrome does.
+ * - `connect()` opens a port to the `runtime.onConnect` listeners; with none, Chrome fails it.
  *
  * Every call the adapters make is recorded for the test to inspect. Undo with
  * `vi.unstubAllGlobals()`.
@@ -95,11 +96,17 @@ export interface FakeChrome {
   /** `runtime.sendMessage` calls. */
   messages: unknown[];
   /** Listener counts, to check that registration happened. */
-  listenerCounts(): Record<"message" | "tabRemoved" | "action" | "installed", number>;
+  listenerCounts(): Record<"message" | "connect" | "tabRemoved" | "action" | "installed", number>;
   /** Dispatch a message to the `onMessage` listeners as Chrome would. */
   deliver(msg: unknown, sender?: FakeSender): Delivery;
   removeTab(tabId: number): void;
   clickAction(tab: { id?: number; url?: string }): void;
+  /**
+   * A content script's `runtime.connect({ name })`. `accepted` is false when no `onConnect`
+   * listener took it: Chrome then fails the connect and logs an unchecked `runtime.lastError` in
+   * the frame. `disconnected` is true once a listener has disconnected the port.
+   */
+  connect(name: string): { accepted: boolean; disconnected: boolean };
   /** Fire `runtime.onInstalled`. */
   installed(reason: string): void;
   /** The object installed as `globalThis.chrome`. */
@@ -117,6 +124,7 @@ export function installFakeChrome(): FakeChrome {
   const onTabRemoved = new FakeEvent<[tabId: number]>();
   const onClicked = new FakeEvent<[tab: { id?: number; url?: string }]>();
   const onInstalled = new FakeEvent<[details: { reason: string }]>();
+  const onConnect = new FakeEvent<[port: chrome.runtime.Port]>();
 
   const fc: FakeChrome = {
     sender: {
@@ -138,6 +146,7 @@ export function installFakeChrome(): FakeChrome {
     messages: [],
     listenerCounts: () => ({
       message: onMessage.listeners.length,
+      connect: onConnect.listeners.length,
       tabRemoved: onTabRemoved.listeners.length,
       action: onClicked.listeners.length,
       installed: onInstalled.listeners.length,
@@ -164,6 +173,21 @@ export function installFakeChrome(): FakeChrome {
     },
     removeTab: (tabId) => void onTabRemoved.fire(tabId),
     clickAction: (tab) => void onClicked.fire(tab),
+    connect(name) {
+      const opened = { accepted: onConnect.listeners.length > 0, disconnected: false };
+      const port = {
+        name,
+        sender: structuredClone(fc.sender),
+        disconnect: () => {
+          opened.disconnected = true;
+        },
+        postMessage: () => {},
+        onMessage: new FakeEvent(),
+        onDisconnect: new FakeEvent(),
+      } as unknown as chrome.runtime.Port;
+      onConnect.fire(port);
+      return opened;
+    },
     installed: (reason) => void onInstalled.fire({ reason }),
     chrome: undefined as unknown as typeof chrome,
   };
@@ -172,6 +196,7 @@ export function installFakeChrome(): FakeChrome {
     runtime: {
       onMessage,
       onInstalled,
+      onConnect,
       getURL: (path: string) => `${EXTENSION_ORIGIN}/${path}`,
       sendMessage: async (msg: unknown) => {
         fc.messages.push(structuredClone(msg));
