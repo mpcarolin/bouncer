@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8"><title>custom banner: settings only</title><style>
+body { font: 16px system-ui; margin: 0; } main { padding: 24px; height: 3000px; }
+.banner { position: fixed; left: 0; right: 0; bottom: 0; background: #222; color: #fff; padding: 16px; z-index: 9999; }
+.modal { position: fixed; inset: 10% 20%; background: #fff; border: 1px solid #999; padding: 16px; z-index: 10000; }
+#status { position: fixed; top: 0; right: 0; background: #ffd; padding: 4px; }
+</style></head>
+<body style="overflow:hidden"><main><h1>Home-grown banner, no reject: settings → toggles → save</h1><p>Expected (needs the AI gate): open settings, switch off Analytics + Marketing, switch ON "Do not sell", save. Scroll is locked until consent.</p></main>
+<div id="status">consent: unset</div>
+<div class="banner" id="cookie-bar">This website uses cookies to improve your experience and for marketing.
+  <button onclick="openPrefs()">Cookie settings</button> <button onclick="save(true)">Accept</button></div>
+<div class="modal" id="cookie-prefs" style="display:none" role="dialog" aria-label="Cookie preferences">
+  <h2>Cookie preferences</h2>
+  <label><input type="checkbox" id="c-nec" checked disabled> Strictly necessary</label><br>
+  <label><input type="checkbox" id="c-ana" checked> Analytics cookies</label><br>
+  <label><input type="checkbox" id="c-mkt" checked> Marketing cookies</label><br>
+  <label><input type="checkbox" id="c-dns"> Do not sell or share my personal information</label><br>
+  <button onclick="save(false)">Save choices</button>
+</div>
+<script>
+function openPrefs(){ document.getElementById('cookie-bar').style.display='none'; document.getElementById('cookie-prefs').style.display='block'; }
+function save(all){ const v = all ? 'all' : ['ana','mkt','dns'].map(k=>k+'='+document.getElementById('c-'+k).checked).join(',');
+  document.getElementById('status').textContent='consent: '+v; document.getElementById('cookie-prefs').style.display='none'; document.getElementById('cookie-bar').style.display='none'; }
+</script></body></html>
