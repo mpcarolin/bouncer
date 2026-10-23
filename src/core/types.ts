@@ -33,14 +33,16 @@ export type Label =
   | "other";
 
 /** What the chooser (§2f) decided, or `no_option`/`unsure` when it did not click anything. */
-export type DecisionKind =
-  | "reject"
-  | "save"
-  | "settings"
-  | "close"
-  | "agree"
-  | "no_option"
-  | "unsure";
+export type Decision =
+  | { kind: "reject"; target: number }
+  | { kind: "save"; target: number; toggles: { id: number; to: boolean }[] }
+  | { kind: "settings"; target: number }
+  | { kind: "close"; target: number }
+  | { kind: "agree"; target: number }
+  | { kind: "no_option" }
+  | { kind: "unsure"; reason: string };
+
+export type DecisionKind = Decision["kind"];
 
 export type LabelSource = "rule" | "regex" | "ai";
 

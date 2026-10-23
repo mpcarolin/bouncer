@@ -19,3 +19,10 @@ export function lab(drafts: Draft[], ai: Record<number, Label> = {}): Labelled[]
   const merged = mergeAiLabels(banner, labelDeterministic(banner), ai);
   return banner.controls.map((c) => merged.get(c.id) as Labelled);
 }
+
+/** Ground-truth labels as the chooser's input: every label from a rule, nothing blocked. */
+export function toLabelled(labels: Record<number, Label>): Map<number, Labelled> {
+  return new Map(
+    Object.entries(labels).map(([id, label]) => [Number(id), { label, source: "rule" as const }]),
+  );
+}

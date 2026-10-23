@@ -3,10 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { portFixtures } from "../../scripts/port-fixtures.ts";
+import { type ChooseOpts, choose } from "../../src/core/choose.ts";
 import type { BannerFixture } from "../../src/core/fixture.ts";
-import type { DecisionKind, Label } from "../../src/core/types.ts";
 import { loadFixtures } from "../fixtures/load.ts";
 import { validateFixture } from "../fixtures/schema.ts";
+import { toLabelled } from "../helpers/banner.ts";
 
 const SPIKE_DIR = "spike/prompt-variants/fixtures";
 const BANNERS_DIR = "test/fixtures/banners";
@@ -36,25 +37,6 @@ const ADVERSARIAL: Record<string, string> = {
   "adv-elfogadom": "Elfogadom",
   "adv-sounds-good": "Sounds good",
 };
-
-/**
- * A minimal §2f over ground-truth labels (default options), to catch a hand-written
- * `expectedDecision` that contradicts the labels. Not the production chooser.
- */
-function decide(f: BannerFixture): DecisionKind {
-  const labels = f.expectedLabels ?? {};
-  const withLabel = (...ls: Label[]) =>
-    f.banner.controls.filter((c) => ls.includes(labels[c.id] as Label));
-  const clickable = (ls: Label[]) =>
-    withLabel(...ls).filter((c) => c.role === "button" || c.role === "link");
-  if (clickable(["reject"]).length > 0) return "reject";
-  const optional = withLabel("toggle-optional", "toggle-optout");
-  if (optional.length > 0 && clickable(["save"]).length > 0) return "save";
-  if (f.stage === 1 && clickable(["settings"]).length > 0) return "settings";
-  if (clickable(["close"]).length > 0) return "close";
-  if (clickable(["accept", "acknowledge"]).length > 0) return "no_option";
-  return "unsure";
-}
 
 describe("fixture corpus", () => {
   test("loads and validates every fixture, with unique ids", () => {
@@ -93,9 +75,15 @@ describe("fixture corpus", () => {
     }
   });
 
-  test("expectedDecision agrees with a hand-run of §2f over the labels", () => {
+  test("expectedDecision agrees with the real chooser over the labels", () => {
     for (const f of fixtures.filter((x) => x.kind === "positive")) {
-      expect(f.expectedDecision, f.id).toBe(decide(f));
+      const opts: ChooseOpts = {
+        closeAction: "click",
+        agreeToDismiss: false,
+        allowSettings: f.stage === 1,
+      };
+      const got = choose(f.banner, toLabelled(f.expectedLabels ?? {}), opts);
+      expect(f.expectedDecision, f.id).toBe(got.kind);
     }
   });
 
