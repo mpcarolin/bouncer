@@ -65,17 +65,50 @@ describe("Arbiter", () => {
     expect(await arb.claimForBouncer(1, "doc-2")).toEqual({ granted: true });
   });
 
-  it("with no top document recorded, the claimant's document is adopted", async () => {
+  it("with no recorded top document, a claim is stale", async () => {
     const { session } = fakeBackground();
     const arb = new Arbiter(session);
-    expect(await arb.claimForBouncer(2, "doc-9")).toEqual({ granted: true });
-    await arb.forget(2);
+    expect(await arb.claimForBouncer(2, "doc-9")).toEqual({ granted: false, reason: "stale" });
+    expect(await arb.owner(2)).toBe("none");
+  });
+
+  it("autoconsent speaking first is kept when the top document arrives", async () => {
+    const { session } = fakeBackground();
+    const arb = new Arbiter(session);
     await arb.popupFound(2, 0);
+    expect((await arb.claimForBouncer(2, "doc-9")).reason).toBe("stale");
+    await arb.topDocument(2, "doc-9");
     expect(await arb.claimForBouncer(2, "doc-9")).toEqual({
       granted: false,
       reason: "autoconsent",
     });
-    expect((await arb.claimForBouncer(2, "doc-8")).reason).toBe("stale");
+  });
+
+  it("a duplicate topDocument for the same document keeps the claim", async () => {
+    const { arb } = await setup();
+    await arb.claimForBouncer(1, "doc-1");
+    await arb.topDocument(1, "doc-1");
+    expect(await arb.claimForBouncer(1, "doc-1")).toEqual({ granted: false, reason: "already" });
+    expect(await arb.popupFound(1, 0)).toEqual({ sendOptOut: false });
+  });
+
+  it("a persisted top-frame cmpDetected keeps the claim refused after a restart", async () => {
+    const { session, arb } = await setup();
+    await arb.cmpDetected(1, 0);
+    const reborn = new Arbiter(session);
+    expect(await reborn.claimForBouncer(1, "doc-1")).toEqual({
+      granted: false,
+      reason: "autoconsent",
+    });
+  });
+
+  it("a concurrent claim and popupFound have exactly one winner", async () => {
+    const { arb } = await setup();
+    const [claim, popup] = await Promise.all([
+      arb.claimForBouncer(1, "doc-1"),
+      arb.popupFound(1, 0),
+    ]);
+    expect(Number(claim.granted) + Number(popup.sendOptOut)).toBe(1);
   });
 
   it("survives a restart: a new Arbiter over the same KV sees the claim", async () => {
@@ -110,6 +143,7 @@ describe("Arbiter", () => {
     };
     const arb = new Arbiter(flaky);
     await expect(arb.claimForBouncer(1, "doc-1")).rejects.toThrow("boom");
+    await arb.topDocument(1, "doc-1");
     expect(await arb.claimForBouncer(1, "doc-1")).toEqual({ granted: true });
   });
 });

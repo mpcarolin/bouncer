@@ -12,7 +12,7 @@ interface ArbState {
 const key = (tabId: number) => `arb:${tabId}`;
 
 /**
- * Background-side arbiter (§2b): one owner per tab and page load. Every method is a serialised
+ * Background-side arbiter (§2b): one owner per tab and page load. Atomicity assumes a single Arbiter instance (one live service worker). Every method is a serialised
  * read-modify-write on `arb:<tabId>`; state lives only in the KV so a restarted service worker
  * (a new Arbiter over the same KV) sees every earlier claim.
  */
@@ -43,11 +43,25 @@ export class Arbiter {
     );
   }
 
-  /** A new top document: fresh state. */
+  /**
+   * A new top document: fresh state. Idempotent for the same document, so a repeated hello or
+   * navigation event never wipes a claim. State created before any document was known (autoconsent
+   * spoke first) is kept and attached to this document.
+   */
   topDocument(tabId: number, documentId: string): Promise<void> {
-    return this.serial(tabId, () =>
-      this.kv.set(key(tabId), { documentId, owner: "none", topCmp: false } satisfies ArbState),
-    );
+    return this.serial(tabId, async () => {
+      const s = await this.kv.get<ArbState>(key(tabId));
+      if (s && s.documentId === documentId) return;
+      if (s && s.documentId === null) {
+        await this.kv.set(key(tabId), { ...s, documentId } satisfies ArbState);
+        return;
+      }
+      await this.kv.set(key(tabId), {
+        documentId,
+        owner: "none",
+        topCmp: false,
+      } satisfies ArbState);
+    });
   }
 
   /** A top-frame detection gives the page to autoconsent. A child-frame one changes nothing. */
@@ -67,9 +81,8 @@ export class Arbiter {
   ): Promise<{ granted: boolean; reason?: "autoconsent" | "already" | "stale" }> {
     return this.serial(tabId, async () => {
       const s = await this.load(tabId);
-      // No top document recorded yet: the claimant's document is taken to be the page.
-      if (s.documentId === null) s.documentId = documentId;
-      else if (s.documentId !== documentId) return { granted: false, reason: "stale" as const };
+      // No recorded page, or a different one: stand down. The hello always records the page first.
+      if (s.documentId !== documentId) return { granted: false, reason: "stale" as const };
       if (s.owner === "autoconsent") {
         await this.kv.set(key(tabId), s);
         return { granted: false, reason: "autoconsent" as const };
