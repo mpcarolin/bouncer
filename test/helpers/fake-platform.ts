@@ -1,4 +1,10 @@
-import type { ReplyOf, ToBackground, ToContent } from "../../src/core/messages.ts";
+import {
+  type FrameMessage,
+  isToContent,
+  type ReplyOf,
+  type ToBackground,
+  type ToContent,
+} from "../../src/core/messages.ts";
 import type {
   BackgroundPlatform,
   ContentPlatform,
@@ -17,7 +23,9 @@ import type {
  *   `session` contents are kept.
  * - `fakeContent(bg, sender?)` is one frame's content script. Its `send` reaches the background's
  *   message handler with `content.sender` as the sender (a mutable field: change `url` to simulate
- *   navigation). `bg.sendToFrame` reaches the content whose `sender.tabId`/`frameId` match.
+ *   navigation). `bg.sendToFrame` reaches the content whose `sender.tabId`/`frameId` match: every
+ *   message lands in its `inbox` (autoconsent's too, since its content script shares the frame),
+ *   and Bouncer's own also reach the `onMessage` handlers.
  */
 
 export class MemoryKV implements KV {
@@ -91,7 +99,8 @@ export function fakeBackground(): FakeBackground {
       );
       if (!target) throw new Error(`no content script at tab ${tabId} frame ${frameId}`);
       const copy = structuredClone(msg);
-      for (const h of target.handlers) h(copy);
+      target.inbox.push(copy);
+      if (isToContent(copy)) for (const h of target.handlers) h(structuredClone(copy));
     },
     async openPage(p, query) {
       bg.opened.push(p);
@@ -132,6 +141,8 @@ export interface FakeContent extends ContentPlatform {
    * page) or `documentId`.
    */
   sender: Sender;
+  /** Everything `sendToFrame` delivered to this frame, Bouncer's messages and autoconsent's. */
+  inbox: FrameMessage[];
   /** @internal */
   handlers: ((m: ToContent) => void)[];
 }
@@ -151,6 +162,7 @@ export function fakeContent(bg: FakeBackground, sender: Partial<Sender> = {}): F
       ...sender,
       url,
     },
+    inbox: [],
     handlers: [],
     send<M extends ToBackground>(m: M) {
       return bg.deliver(m, content.sender) as Promise<ReplyOf<M> | undefined>;

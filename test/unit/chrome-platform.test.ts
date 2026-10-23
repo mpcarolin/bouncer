@@ -1,12 +1,17 @@
-import { evalSnippets } from "@duckduckgo/autoconsent";
+import { readFileSync } from "node:fs";
+import { evalSnippets, filterCompactRules, type IndexedCMPRuleset } from "@duckduckgo/autoconsent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AiProvider } from "../../src/core/ai.ts";
 import { startBackground } from "../../src/core/background-app.ts";
 import { DEFAULT_SETTINGS } from "../../src/core/settings.ts";
-import { chromeBackground } from "../../src/platform/chrome/background.ts";
+import { chromeAcLib, chromeBackground } from "../../src/platform/chrome/background.ts";
 import { chromeContent } from "../../src/platform/chrome/content.ts";
 import { chromePage } from "../../src/platform/chrome/page.ts";
 import { EXTENSION_ORIGIN, installFakeChrome } from "../helpers/fake-chrome.ts";
+
+/** autoconsent's compact rules, as the build ships them. */
+const raw = readFileSync("node_modules/@duckduckgo/autoconsent/rules/compact-rules.json", "utf8");
+const rules = JSON.parse(raw) as IndexedCMPRuleset;
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -218,6 +223,53 @@ describe("chromeBackground events and actions", () => {
   });
 });
 
+describe("chromeAcLib", () => {
+  const SHIPPED = `${EXTENSION_ORIGIN}/vendor/autoconsent/compact-rules.json`;
+
+  /** Serves the extension's packaged files; `fail` makes the next reads fail. */
+  function serveRules() {
+    const reads: string[] = [];
+    const served = { fail: 0, reads };
+    vi.stubGlobal("fetch", async (url: string) => {
+      reads.push(String(url));
+      if (served.fail > 0) {
+        served.fail--;
+        return new Response("", { status: 404 });
+      }
+      return new Response(raw);
+    });
+    return served;
+  }
+
+  it("reads the rules shipped beside autoconsent's bundle once, and filters them per frame", async () => {
+    installFakeChrome();
+    const served = serveRules();
+    const lib = chromeAcLib();
+    const top = await lib.filterRules("https://www.example.com/", true);
+    const frame = await lib.filterRules("https://cmp.example/", false);
+    expect(served.reads).toEqual([SHIPPED]);
+    expect(top).toEqual(
+      filterCompactRules(rules, { url: "https://www.example.com/", mainFrame: true }),
+    );
+    expect(frame).toEqual(
+      filterCompactRules(rules, { url: "https://cmp.example/", mainFrame: false }),
+    );
+    expect(top).not.toEqual(frame);
+  });
+
+  it("reads them again after a failed read, rather than failing every frame after it", async () => {
+    installFakeChrome();
+    const served = serveRules();
+    served.fail = 1;
+    const lib = chromeAcLib();
+    await expect(lib.filterRules("https://a.example/", true)).rejects.toThrow("404");
+    expect(await lib.filterRules("https://a.example/", true)).toEqual(
+      filterCompactRules(rules, { url: "https://a.example/", mainFrame: true }),
+    );
+    expect(served.reads).toEqual([SHIPPED, SHIPPED]);
+  });
+});
+
 describe("chromeContent", () => {
   it("send delivers the message to the background and resolves with its reply", async () => {
     const fc = installFakeChrome();
@@ -325,6 +377,32 @@ describe("the background over the Chrome adapters", () => {
       `${EXTENSION_ORIGIN}/onboarding.html`,
       `${EXTENSION_ORIGIN}/settings.html?site=www.example.com`,
     ]);
+  });
+
+  it("answers autoconsent's init in the sending frame, through tabs.sendMessage", async () => {
+    const fc = installFakeChrome();
+    vi.stubGlobal("fetch", async () => new Response(raw));
+    startBackground(chromeBackground(), provider, { acLib: chromeAcLib() });
+    const child = {
+      tab: { id: 4, url: "https://www.example.com/" },
+      frameId: 3,
+      documentId: "c",
+      url: "https://cmp.example/",
+    };
+    fc.deliver({ type: "init", url: "https://cmp.example/" }, child);
+    await vi.waitFor(() => expect(fc.sent).toHaveLength(1));
+    expect(fc.sent[0]).toMatchObject({
+      tabId: 4,
+      options: { frameId: 3 },
+      msg: {
+        type: "initResp",
+        rules: {
+          autoconsent: [],
+          compact: filterCompactRules(rules, { url: "https://cmp.example/", mainFrame: false }),
+        },
+        config: { enabled: true, autoAction: null },
+      },
+    });
   });
 
   it("routes a tab closing to the arbiter", async () => {

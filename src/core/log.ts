@@ -21,7 +21,8 @@ export interface LogEntry {
     result: "answer" | "timeout" | "error";
   }[];
   verification?: string;
-  outcome: Outcome;
+  /** `working` while an autoconsent opt-out is in flight; it is patched to the outcome. */
+  outcome: Outcome | "working";
   reason?: string;
   notes: string[];
 }

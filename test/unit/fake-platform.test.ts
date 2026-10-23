@@ -104,6 +104,17 @@ describe("fake platform", () => {
     await expect(bg.sendToFrame(9, 9, { type: "restoreAcStyles" })).rejects.toThrow();
   });
 
+  it("sendToFrame puts every message in the frame's inbox, but hands Bouncer's handlers only theirs", async () => {
+    const bg = fakeBackground();
+    const frame = fakeContent(bg, { tabId: 1, frameId: 2 });
+    const handled: unknown[] = [];
+    frame.onMessage((m) => handled.push(m));
+    await bg.sendToFrame(1, 2, { type: "optOut" });
+    await bg.sendToFrame(1, 2, { type: "restoreAcStyles" });
+    expect(frame.inbox).toEqual([{ type: "optOut" }, { type: "restoreAcStyles" }]);
+    expect(handled).toEqual([{ type: "restoreAcStyles" }]);
+  });
+
   it("restart drops handlers but keeps local and session", async () => {
     const bg = fakeBackground();
     await bg.local.set("k", { a: 1 });

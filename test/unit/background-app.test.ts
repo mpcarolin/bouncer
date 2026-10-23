@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AiMeta, AiProvider } from "../../src/core/ai.ts";
+import type { AcLib } from "../../src/core/autoconsent-bg.ts";
 import { startBackground } from "../../src/core/background-app.ts";
 import { MAX_MODEL_CALLS_PER_PAGE } from "../../src/core/config.ts";
 import type { LogEntry } from "../../src/core/log.ts";
@@ -500,9 +501,22 @@ describe("toolbar icon and install", () => {
 });
 
 describe("autoconsent messages", () => {
-  const popupFound = { type: "popupFound", cmp: "onetrust" };
+  const popupFound = { type: "popupFound", cmp: "onetrust", url: "https://example.com/" };
+  const init = (url: string) => ({ type: "init", url }) as never;
 
-  it("reply at once and touch none of Bouncer's state when no handler is plugged in", async () => {
+  /** An autoconsent library that records what it is asked to filter. */
+  function recordingLib() {
+    const asked: { url: string; mainFrame: boolean }[] = [];
+    const acLib: AcLib = {
+      filterRules: async (url, mainFrame) => {
+        asked.push({ url, mainFrame });
+        return { rulesFor: url };
+      },
+    };
+    return { acLib, asked };
+  }
+
+  it("reply at once and touch none of Bouncer's state when no autoconsent library is given", async () => {
     const { bg, app } = started();
     const top = fakeContent(bg, { documentId: "d1" });
     await top.send({ type: "hello" });
@@ -510,15 +524,12 @@ describe("autoconsent messages", () => {
     expect(await top.send(popupFound as never)).toBeUndefined();
     expect(await bg.session.get("arb:1")).toEqual(before);
     expect(await app.log.list()).toEqual([]);
+    expect(app.autoconsent).toBeUndefined();
   });
 
-  it("are delegated to the plugged-in handler with the message and its sender", async () => {
-    const seen: { msg: unknown; from: unknown }[] = [];
-    const { bg } = started({
-      autoconsent: async (msg, from) => {
-        seen.push({ msg, from });
-      },
-    });
+  it("reach the autoconsent host with their sender: an init is answered in that frame", async () => {
+    const { acLib, asked } = recordingLib();
+    const { bg } = started({ acLib });
     const frame = fakeContent(bg, {
       tabId: 6,
       frameId: 2,
@@ -526,52 +537,72 @@ describe("autoconsent messages", () => {
       url: "https://x.test/",
       tabUrl: "https://page.test/",
     });
-    expect(await frame.send(popupFound as never)).toBeUndefined();
-    expect(seen).toEqual([
-      {
-        msg: popupFound,
-        from: {
-          tabId: 6,
-          frameId: 2,
-          documentId: "f",
-          url: "https://x.test/",
-          tabUrl: "https://page.test/",
-        },
-      },
-    ]);
-  });
-
-  it("are not held up by a slow handler: the reply comes at once", async () => {
-    let finish: () => void = () => {};
-    const { bg } = started({
-      autoconsent: () => new Promise<void>((resolve) => (finish = resolve)),
+    expect(await frame.send(init("https://x.test/"))).toBeUndefined();
+    await vi.waitFor(() => expect(frame.inbox).toHaveLength(1));
+    expect(frame.inbox[0]).toMatchObject({
+      type: "initResp",
+      rules: { compact: { rulesFor: "https://x.test/" } },
+      config: { enabled: true, autoAction: null },
     });
-    expect(await fakeContent(bg).send(popupFound as never)).toBeUndefined();
-    finish();
+    expect(asked).toEqual([{ url: "https://x.test/", mainFrame: false }]);
   });
 
-  it("still reply when the handler throws or rejects, and the failure is logged", async () => {
+  it("share the one arbiter: autoconsent's popupFound makes Bouncer's own claim stand down", async () => {
+    const { bg, app } = started(recordingLib());
+    const top = fakeContent(bg, { tabId: 3, frameId: 0, documentId: "d1" });
+    await top.send({ type: "hello" });
+    await top.send(init("https://example.com/"));
+    await top.send(popupFound as never);
+    await vi.waitFor(() => expect(top.inbox.map((m) => m.type)).toContain("optOut"));
+    expect(await top.send({ type: "claim" })).toEqual({ granted: false, reason: "autoconsent" });
+    await vi.waitFor(async () =>
+      expect(await app.log.list()).toMatchObject([{ path: "autoconsent", outcome: "working" }]),
+    );
+  });
+
+  it("are not held up by a slow host: the reply comes at once", async () => {
+    const { bg } = started({ acLib: { filterRules: () => new Promise(() => {}) } });
+    expect(await fakeContent(bg).send(init("https://example.com/"))).toBeUndefined();
+  });
+
+  it("still reply when the host throws or rejects, and the failure is logged", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     let n = 0;
     const { bg } = started({
-      autoconsent: () => {
-        if (n++ === 0) throw new Error("sync");
-        return Promise.reject(new Error("async"));
+      acLib: {
+        filterRules: () => {
+          if (n++ === 0) throw new Error("sync");
+          return Promise.reject(new Error("async"));
+        },
       },
     });
     const frame = fakeContent(bg);
-    expect(await frame.send(popupFound as never)).toBeUndefined();
-    expect(await frame.send(popupFound as never)).toBeUndefined();
+    expect(await frame.send(init("https://example.com/"))).toBeUndefined();
+    expect(await frame.send(init("https://example.com/"))).toBeUndefined();
     await vi.waitFor(() => expect(error).toHaveBeenCalledTimes(2));
   });
 
-  it("also covers messages that are not objects at all", async () => {
-    const seen: unknown[] = [];
-    const { bg } = started({ autoconsent: (msg) => void seen.push(msg) });
+  it("ignore messages that are neither Bouncer's nor autoconsent's", async () => {
+    const error = vi.spyOn(console, "error");
+    const { bg, app } = started(recordingLib());
     const frame = fakeContent(bg);
-    expect(await frame.send(undefined as never)).toBeUndefined();
-    expect(await frame.send("hello" as never)).toBeUndefined();
-    expect(seen).toEqual([undefined, "hello"]);
+    for (const junk of [undefined, "hello", { type: "nope" }, { type: 7 }]) {
+      expect(await frame.send(junk as never)).toBeUndefined();
+    }
+    await app.autoconsent?.idle();
+    expect(frame.inbox).toEqual([]);
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it("a closed tab's autoconsent state is forgotten, and its pending opt-out ended", async () => {
+    const { bg, app } = started(recordingLib());
+    const top = fakeContent(bg, { tabId: 6, frameId: 0, documentId: "d1" });
+    await top.send(init("https://example.com/"));
+    await top.send(popupFound as never);
+    await vi.waitFor(async () => expect(await bg.session.get("ac:6")).toBeDefined());
+    bg.removeTab(6);
+    await vi.waitFor(async () => expect(await bg.session.get("ac:6")).toBeUndefined());
+    expect(await app.log.list()).toMatchObject([{ outcome: "failed", reason: "tab_closed" }]);
   });
 });
 

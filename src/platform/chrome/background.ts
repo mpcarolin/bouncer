@@ -1,6 +1,36 @@
-import { evalSnippets } from "@duckduckgo/autoconsent";
+import { evalSnippets, filterCompactRules, type IndexedCMPRuleset } from "@duckduckgo/autoconsent";
+import type { AcLib } from "../../core/autoconsent-bg.ts";
 import type { BackgroundPlatform, Sender } from "../../core/platform.ts";
 import { chromeKV, openExtensionPage } from "./shared.ts";
+
+/** autoconsent's compact rules, which the build copies, unmodified, beside its content bundle. */
+const RULES_PATH = "vendor/autoconsent/compact-rules.json";
+
+/**
+ * autoconsent's library for the core. The rules are read from the extension's own package (not
+ * the network) once per service-worker lifetime; a failed read is tried again by the next frame.
+ */
+export function chromeAcLib(): AcLib {
+  let rules: Promise<IndexedCMPRuleset> | undefined;
+  function load(): Promise<IndexedCMPRuleset> {
+    if (!rules) {
+      const read = fetch(chrome.runtime.getURL(RULES_PATH)).then(async (r) => {
+        if (!r.ok) throw new Error(`could not read ${RULES_PATH}: ${r.status}`);
+        return (await r.json()) as IndexedCMPRuleset;
+      });
+      rules = read;
+      read.catch(() => {
+        if (rules === read) rules = undefined;
+      });
+    }
+    return rules;
+  }
+  return {
+    async filterRules(url, mainFrame) {
+      return filterCompactRules(await load(), { url, mainFrame });
+    },
+  };
+}
 
 /**
  * Chrome's sender, as Bouncer's. A sender with no tab (a popup or an offscreen document) gets

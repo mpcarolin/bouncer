@@ -32,6 +32,101 @@ export type ToContent =
   | { type: "acOutcome"; outcome: Outcome }
   | { type: "restoreAcStyles" };
 
+// autoconsent's protocol, as @duckduckgo/autoconsent 16.59 defines it (dist/types/messages.d.ts
+// and types.d.ts). The core keeps its own copy so it never imports autoconsent; the compile-time
+// checks in test/unit/autoconsent-bg.test.ts keep the two in step.
+
+/** autoconsent's `LifecycleState`, carried by its `report` messages. */
+export type AcLifecycle =
+  | "loading"
+  | "initialized"
+  | "waitingForInitResponse"
+  | "started"
+  | "nothingDetected"
+  | "cmpDetected"
+  | "openPopupDetected"
+  | "runningOptOut"
+  | "runningOptIn"
+  | "optOutSucceeded"
+  | "optOutFailed"
+  | "optInSucceeded"
+  | "optInFailed"
+  | "done";
+
+/** autoconsent's `Config`, sent in every `initResp`. */
+export interface AutoconsentConfig {
+  enabled: boolean;
+  autoAction: "optOut" | "optIn" | null;
+  disabledCmps: string[];
+  enablePrehide: boolean;
+  enableCosmeticRules: boolean;
+  enableGeneratedRules: boolean;
+  detectRetries: number;
+  isMainWorld: boolean;
+  prehideTimeout: number;
+  enableHeuristicDetection: boolean;
+  enablePopupMutationObserver: boolean;
+  visualTest: boolean;
+  logs: {
+    lifecycle: boolean;
+    rulesteps: boolean;
+    detectionsteps: boolean;
+    evals: boolean;
+    errors: boolean;
+    messages: boolean;
+    waits: boolean;
+  };
+  performanceLoggingEnabled: boolean;
+  heuristicPopupSearchTimeout: number;
+  heuristicMode: "off" | "reject" | "tier1" | "tier2";
+}
+
+/** What autoconsent's content script sends the background (its `ContentScriptMessage`). */
+export type AcMessage =
+  | { type: "init"; url: string }
+  | { type: "eval"; id: string; code: string; snippetId?: string }
+  | { type: "visualDelay"; timeout: number }
+  | { type: "cmpDetected"; cmp: string; url: string }
+  | { type: "popupFound"; cmp: string; url: string }
+  | { type: "optOutResult"; cmp: string; result: boolean; scheduleSelfTest: boolean; url: string }
+  | { type: "optInResult"; cmp: string; result: boolean; scheduleSelfTest: boolean; url: string }
+  | { type: "selfTestResult"; cmp: string; result: boolean; url: string }
+  | {
+      type: "autoconsentDone";
+      cmp: string;
+      isCosmetic: boolean;
+      url: string;
+      duration: number;
+      totalClicks: number;
+    }
+  | { type: "autoconsentError"; details: unknown }
+  | {
+      type: "report";
+      instanceId: string;
+      url: string;
+      mainFrame: boolean;
+      /** autoconsent's `ConsentState`; Bouncer reads only these fields. */
+      state: { lifecycle: AcLifecycle; detectedCmps: string[] };
+    };
+
+/**
+ * What Bouncer sends autoconsent's content script: part of its `BackgroundMessage`. `optIn` is
+ * deliberately absent, so Bouncer cannot ask autoconsent to accept.
+ */
+export type ToAutoconsent =
+  | {
+      type: "initResp";
+      /** A `RuleBundle`: autoconsent's compact rules for the frame, or none when it is disabled. */
+      rules: { autoconsent: []; compact?: unknown };
+      config: AutoconsentConfig;
+    }
+  | { type: "evalResp"; id: string; result: unknown }
+  | { type: "optOut" }
+  | { type: "selfTest" };
+
+/** Anything the background sends one frame: Bouncer's content script and autoconsent's share it. */
+export type FrameMessage = ToContent | ToAutoconsent;
+
 const TO_BACKGROUND_TYPES: Record<ToBackground["type"], true> = {
   hello: true,
   claim: true,
@@ -67,6 +162,25 @@ export function isToBackground(m: unknown): m is ToBackground {
 /** As `isToBackground`, for the background-to-content direction. */
 export function isToContent(m: unknown): m is ToContent {
   return hasKnownType(m, TO_CONTENT_TYPES);
+}
+
+const AC_MESSAGE_TYPES: Record<AcMessage["type"], true> = {
+  init: true,
+  eval: true,
+  visualDelay: true,
+  cmpDetected: true,
+  popupFound: true,
+  optOutResult: true,
+  optInResult: true,
+  selfTestResult: true,
+  autoconsentDone: true,
+  autoconsentError: true,
+  report: true,
+};
+
+/** True for autoconsent's messages to the background, by `type` as `isToBackground` does. */
+export function isAcMessage(m: unknown): m is AcMessage {
+  return hasKnownType(m, AC_MESSAGE_TYPES);
 }
 
 export interface AiReplies {

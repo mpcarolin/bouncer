@@ -1,4 +1,4 @@
-import type { ReplyOf, ToBackground, ToContent } from "./messages.ts";
+import type { FrameMessage, ReplyOf, ToBackground, ToContent } from "./messages.ts";
 
 export interface KV {
   get<T>(k: string): Promise<T | undefined>;
@@ -29,7 +29,8 @@ export interface BackgroundPlatform {
   session: KV;
   /** Returning undefined replies at once with nothing. */
   onMessage(h: (msg: unknown, from: Sender) => Promise<unknown> | undefined): void;
-  sendToFrame(tabId: number, frameId: number, msg: ToContent): Promise<void>;
+  /** To Bouncer's or autoconsent's content script in that frame. Rejects with no receiver. */
+  sendToFrame(tabId: number, frameId: number, msg: FrameMessage): Promise<void>;
   onTabRemoved(cb: (tabId: number) => void): void;
   /** The toolbar icon was clicked. `url` is the active tab's, when the browser exposes it. */
   onActionClicked(cb: (tab: { url?: string }) => void): void;
@@ -37,7 +38,10 @@ export interface BackgroundPlatform {
   onInstalled(cb: (reason: string) => void): void;
   /** Opens an extension page in a new tab; `query` becomes its query string. */
   openPage(p: PageName, query?: Record<string, string>): Promise<void>;
-  /** autoconsent eval. */
+  /**
+   * Runs autoconsent's eval snippet `snippetId` in the frame's main world and resolves with its
+   * result. Rejects for an unknown snippet or a frame it can't run in.
+   */
   runInMainWorld(tabId: number, frameId: number, snippetId: string): Promise<unknown>;
 }
 

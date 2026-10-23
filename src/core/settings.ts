@@ -36,6 +36,15 @@ function bareHost(hostname: string): string {
   return hostname.toLowerCase().replace(/^www\./, "");
 }
 
+/** The site a URL is on, as the settings name sites: its hostname without `www.`. "" if none. */
+export function siteOf(url: string): string {
+  try {
+    return bareHost(new URL(url).hostname);
+  } catch {
+    return "";
+  }
+}
+
 /** Matches on the hostname without `www.`. An unparseable URL is treated as not enabled. */
 export function enabledFor(s: Settings, url: string): boolean {
   if (!s.enabled) return false;

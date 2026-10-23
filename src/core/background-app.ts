@@ -1,18 +1,19 @@
 import type { AiMeta, AiProvider, AiResult } from "./ai.ts";
 import { serveAi } from "./ai-remote.ts";
 import { Arbiter } from "./arbiter.ts";
+import { type AcLib, AutoconsentHost } from "./autoconsent-bg.ts";
 import { ModelBudget } from "./budget.ts";
 import { DecisionLog } from "./log.ts";
-import { type AiRequest, isToBackground, type ToBackground } from "./messages.ts";
+import { type AiRequest, isAcMessage, isToBackground, type ToBackground } from "./messages.ts";
 import type { BackgroundPlatform, Sender } from "./platform.ts";
 import { enabledFor, loadSettings } from "./settings.ts";
 
-/** Handles one autoconsent protocol message. Its real replies go out through `sendToFrame`. */
-export type AutoconsentHandler = (msg: unknown, from: Sender) => Promise<void> | void;
-
 export interface BackgroundOptions {
-  /** Defaults to a no-op until Task 17 plugs in autoconsent's host. */
-  autoconsent?: AutoconsentHandler;
+  /**
+   * autoconsent's library, built by the browser side. Without it there is no autoconsent host,
+   * and autoconsent's messages are acknowledged and ignored.
+   */
+  acLib?: AcLib;
 }
 
 export interface BackgroundApp {
@@ -20,6 +21,8 @@ export interface BackgroundApp {
   readonly arbiter: Arbiter;
   /** The one decision log for this background's lifetime (its write queue is per instance). */
   readonly log: DecisionLog;
+  /** autoconsent's host, over the same arbiter and log; absent without `acLib`. */
+  readonly autoconsent?: AutoconsentHost;
 }
 
 /** The messages that need work. `saveRule` and `discardRule` are acknowledged without any. */
@@ -51,12 +54,13 @@ function siteQuery(url: string | undefined): Record<string, string> | undefined 
 
 /**
  * Composes the background: routes Bouncer's messages to the arbiter, the AI provider (through a
- * per-page budget), the decision log and the settings, and registers the browser events. All
- * registration happens before this returns, with nothing awaited first, as a service worker needs.
+ * per-page budget), the decision log and the settings, routes autoconsent's to its host (which
+ * shares the arbiter and the log), and registers the browser events. All registration happens
+ * before this returns, with nothing awaited first, as a service worker needs.
  *
- * Per-tab state that must outlive a worker restart (the arbiter's claims) lives in `p.session`.
- * The AI budgets are kept in memory only: a restarted worker gives each page a fresh budget,
- * which is acceptable because the budget only guards against a runaway page.
+ * Per-tab state that must outlive a worker restart (the arbiter's claims, autoconsent's opt-outs)
+ * lives in `p.session`. The AI budgets are kept in memory only: a restarted worker gives each page
+ * a fresh budget, which is acceptable because the budget only guards against a runaway page.
  */
 export function startBackground(
   p: BackgroundPlatform,
@@ -65,7 +69,8 @@ export function startBackground(
 ): BackgroundApp {
   const arbiter = new Arbiter(p.session);
   const log = new DecisionLog(p.local);
-  const autoconsent = opts.autoconsent ?? (() => {});
+  const autoconsent =
+    opts.acLib && new AutoconsentHost(p, arbiter, log, opts.acLib, () => loadSettings(p.local));
 
   /** The budgeted provider per top document, keyed `${tabId}:${documentId}`. */
   const budgets = new Map<string, AiProvider>();
@@ -146,8 +151,12 @@ export function startBackground(
 
   p.onMessage((msg, from) => {
     if (!isToBackground(msg)) {
-      // autoconsent's protocol: acknowledge at once; its replies arrive through `sendToFrame`.
-      void (async () => autoconsent(msg, from))().catch((e) => report("autoconsent handler", e));
+      // autoconsent's protocol: acknowledge at once; its replies go out through `sendToFrame`.
+      if (autoconsent && isAcMessage(msg)) {
+        void (async () => autoconsent.handle(msg, from))().catch((e) =>
+          report(`autoconsent failed to handle ${msg.type}`, e),
+        );
+      }
       return undefined;
     }
     // Task 20 implements learned rules; until then both are acknowledged and ignored.
@@ -159,6 +168,7 @@ export function startBackground(
     dropBudgets(tabId);
     // Only here, never on navigation: `topDocument` handles a new page within the tab.
     arbiter.forget(tabId).catch((e) => report(`failed to forget tab ${tabId}`, e));
+    autoconsent?.forget(tabId).catch((e) => report(`autoconsent failed to forget tab ${tabId}`, e));
   });
 
   p.onActionClicked((tab) => {
@@ -170,5 +180,5 @@ export function startBackground(
     p.openPage("onboarding").catch((e) => report("failed to open onboarding", e));
   });
 
-  return { arbiter, log };
+  return { arbiter, log, autoconsent };
 }
