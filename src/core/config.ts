@@ -1,0 +1,14 @@
+export const CLAIM_WAIT_MS = 1500;
+export const PANEL_WAIT_MS = 3000;
+export const VERIFY_GONE_MS = 3000;
+export const VERIFY_STAY_MS = 2000;
+export const DETECT_WATCH_MS = 20000;
+export const DETECT_THROTTLE_MS = 250;
+export const MAX_MODEL_CALLS_PER_PAGE = 8;
+export const LINK_THRESHOLD = 10;
+export const GATE_TEXT_CHARS = 150;
+export const AVAILABILITY_TIMEOUT_MS = 1500;
+export const CREATE_TIMEOUT_MS = 30000;
+export const PROMPT_TIMEOUT_MS = 8000;
+export const AC_OPTOUT_TIMEOUT_MS = 15000;
+export const LOG_RETENTION_MS = 86_400_000;

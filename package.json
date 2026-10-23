@@ -1,0 +1,35 @@
+{
+  "name": "bouncer",
+  "type": "module",
+  "private": true,
+  "version": "0.1.0",
+  "license": "MIT",
+  "packageManager": "pnpm@10.20.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.ts --mode production",
+    "build:dev": "node scripts/build.ts --mode development",
+    "build:e2e": "node scripts/build.ts --mode e2e",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "check": "tsc --noEmit && node scripts/check-core-imports.ts",
+    "format": "biome format --write",
+    "format:check": "biome format"
+  },
+  "dependencies": {
+    "@duckduckgo/autoconsent": "16.59.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "@playwright/test": "1.64.1",
+    "@types/chrome": "0.3.6",
+    "@types/node": "26.6.2",
+    "@vitest/browser-playwright": "4.0.6",
+    "playwright": "1.64.1",
+    "typescript": "7.0.2",
+    "vite": "8.3.0",
+    "vitest": "4.0.6"
+  }
+}
