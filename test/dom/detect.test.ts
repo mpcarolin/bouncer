@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DETECT_THROTTLE_MS, DETECT_WATCH_MS } from "../../src/core/config.ts";
 import { CandidateWatcher, type Candidate, findCandidates } from "../../src/core/page/detect.ts";
 import type { Clock } from "../../src/core/types.ts";
@@ -92,6 +92,19 @@ describe("findCandidates", () => {
     expect(found[0]?.modal).toBe(true);
   });
 
+  it("rejects an opacity:0 wrapper around a normal child", () => {
+    mount(
+      `<div style="opacity:0"><div style="${BAR}">We use cookies <button>OK</button></div></div>`,
+    );
+    expect(findCandidates(document)).toEqual([]);
+  });
+
+  it("ignores cookie/privacy wording that sits in a display:none submenu", () => {
+    mount(`<div style="${BAR}">Welcome <button>Menu</button>
+      <ul style="display:none"><li>Privacy</li><li>Cookie policy</li></ul><div hidden>Consent</div></div>`);
+    expect(findCandidates(document)).toEqual([]);
+  });
+
   it("gives equal text equal keys and different text different keys", () => {
     mount(cookieBar());
     const a = findCandidates(document)[0] as Candidate;
@@ -161,11 +174,63 @@ describe("CandidateWatcher", () => {
     expect(passes).toBeLessThanOrEqual(Math.ceil(1000 / DETECT_THROTTLE_MS) + 1);
   });
 
-  it("stops after DETECT_WATCH_MS", async () => {
+  it("observes shadow roots, so a banner populated there later is reported", async () => {
+    const box = mount("<div id='host'></div>");
+    const root = box.querySelector("#host")?.attachShadow({ mode: "open" }) as ShadowRoot;
+    const seen: Candidate[] = [];
+    const w = new CandidateWatcher(document, (c) => seen.push(c));
+    await new Promise((r) => setTimeout(r, 2 * DETECT_THROTTLE_MS));
+    expect(seen).toEqual([]);
+    root.innerHTML = `<div id="inner" style="${BAR}">Cookie notice <button>OK</button></div>`;
+    await new Promise((r) => setTimeout(r, 2 * DETECT_THROTTLE_MS));
+    w.stop();
+    expect(seen.map((c) => c.el.id)).toEqual(["inner"]);
+    expect(seen[0]?.root).toBe(root);
+  });
+
+  it("reports a banner inside a shell that was rejected", async () => {
+    mount(
+      `<div id="shell" style="position:fixed;inset:0;z-index:5000">Privacy preferences <button>Edit</button></div>`,
+    );
+    const seen: string[] = [];
+    const w = new CandidateWatcher(document, (c) => {
+      seen.push(c.el.id);
+      if (c.el.id === "shell") w.reject(c);
+    });
+    await new Promise((r) => setTimeout(r, 2 * DETECT_THROTTLE_MS));
+    document
+      .querySelector("#shell")
+      ?.insertAdjacentHTML(
+        "beforeend",
+        `<div id="banner" style="${BAR}">We use cookies <button>OK</button></div>`,
+      );
+    await new Promise((r) => setTimeout(r, 2 * DETECT_THROTTLE_MS));
+    w.stop();
+    expect(seen).toEqual(["shell", "banner"]);
+  });
+
+  it("survives a throwing handler and still reports the rest of the pass", async () => {
+    mount(cookieBar());
+    mount(`<div id="two" style="${BAR}bottom:80px">Consent <button>OK</button></div>`);
+    const seen: string[] = [];
+    const w = new CandidateWatcher(document, (c) => {
+      seen.push(c.el.id);
+      throw new Error("boom");
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    w.stop();
+    expect(seen).toHaveLength(2);
+  });
+
+  it("stops after DETECT_WATCH_MS and disconnects its observers", async () => {
     const { clock, advance } = fakeClock();
+    const disconnect = vi.spyOn(MutationObserver.prototype, "disconnect");
     const seen: string[] = [];
     new CandidateWatcher(document, (c) => seen.push(c.el.id), clock);
+    expect(disconnect).not.toHaveBeenCalled();
     advance(DETECT_WATCH_MS + 1);
+    expect(disconnect).toHaveBeenCalled();
+    disconnect.mockRestore();
     seen.length = 0;
     mount(cookieBar());
     await flush();

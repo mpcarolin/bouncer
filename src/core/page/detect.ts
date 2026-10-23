@@ -1,7 +1,7 @@
 import { DETECT_THROTTLE_MS, DETECT_WATCH_MS, LINK_THRESHOLD } from "../config.ts";
 import { normalise } from "../text/normalise.ts";
 import type { Clock } from "../types.ts";
-import { BUTTON_SEL, deepAll, isVisible, parentOf, textOf } from "./dom.ts";
+import { BUTTON_SEL, deepAll, isVisible, parentOf, shadowRootsOf, textOf } from "./dom.ts";
 
 export interface Candidate {
   el: Element;
@@ -70,21 +70,47 @@ function qualify(el: Element): Candidate | null {
 /**
  * Outermost qualifying elements, in document order of their first button. Starts from the
  * buttons (few) rather than from every element (many), walking up through shadow hosts.
+ * `wasRejected` marks elements already rejected (under any text): such an element no longer
+ * masks the qualifying elements inside it, which are reported instead. If every qualifying
+ * ancestor of a button was rejected, the outermost is returned (its text may have changed).
  */
-export function findCandidates(doc: Document): Candidate[] {
+export function findCandidates(
+  doc: Document,
+  wasRejected: (el: Element) => boolean = () => false,
+): Candidate[] {
   const cache = new Map<Element, Candidate | null>();
   const found = new Map<Element, Candidate>();
   for (const btn of deepAll(doc, BUTTON_SEL)) {
-    let best: Candidate | null = null;
+    const chain: Candidate[] = []; // innermost first
     for (let a = parentOf(btn); a && a !== doc.documentElement && a !== doc.body; a = parentOf(a)) {
       let c = cache.get(a);
       if (c === undefined) {
         c = qualify(a);
         cache.set(a, c);
       }
-      if (c) best = c;
+      if (c) chain.push(c);
+    }
+    let best: Candidate | undefined = chain[chain.length - 1];
+    for (let i = chain.length - 1; i >= 0; i--) {
+      if (!wasRejected((chain[i] as Candidate).el)) {
+        best = chain[i];
+        break;
+      }
     }
     if (best && !found.has(best.el)) found.set(best.el, best);
+  }
+  // A rejected shell whose text changed only because a banner appeared inside it is not news.
+  for (const el of [...found.keys()]) {
+    if (!wasRejected(el)) continue;
+    for (const other of found.keys()) {
+      if (other === el) continue;
+      for (let p = parentOf(other); p; p = parentOf(p)) {
+        if (p === el) {
+          found.delete(el);
+          break;
+        }
+      }
+    }
   }
   return [...found.values()];
 }
@@ -106,8 +132,10 @@ export interface WatcherOptions {
  * A candidate is identified by element plus text hash, so changed text is reported again.
  */
 export class CandidateWatcher {
-  private readonly observer: MutationObserver;
+  private readonly observers: MutationObserver[] = [];
+  private readonly observed = new WeakSet<Node>();
   private readonly seen = new WeakMap<Element, Set<string>>();
+  private readonly rejected = new WeakSet<Element>();
   private lastPass = Number.NEGATIVE_INFINITY;
   private timer: number | null = null;
   private stopTimer: number | null;
@@ -119,13 +147,7 @@ export class CandidateWatcher {
     private readonly clock: Clock = realClock,
     private readonly opts: WatcherOptions = {},
   ) {
-    this.observer = new MutationObserver(() => this.schedule());
-    this.observer.observe(doc, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      characterData: true,
-    });
+    this.observe(doc);
     this.stopTimer = clock.setTimeout(() => this.stop(), DETECT_WATCH_MS);
     // Not synchronous: `onCandidate` may call back into the watcher before the constructor returns.
     this.schedule();
@@ -134,15 +156,26 @@ export class CandidateWatcher {
   /** Never report this element with this text again. */
   reject(c: Candidate): void {
     this.mark(c);
+    this.rejected.add(c.el);
   }
 
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
-    this.observer.disconnect();
+    for (const o of this.observers) o.disconnect();
+    this.observers.length = 0;
     if (this.timer !== null) this.clock.clearTimeout(this.timer);
     if (this.stopTimer !== null) this.clock.clearTimeout(this.stopTimer);
     this.timer = this.stopTimer = null;
+  }
+
+  /** A document observer does not see inside shadow roots, so each open root gets its own. */
+  private observe(root: Node): void {
+    if (this.observed.has(root)) return;
+    this.observed.add(root);
+    const o = new MutationObserver(() => this.schedule());
+    o.observe(root, { childList: true, subtree: true, attributes: true, characterData: true });
+    this.observers.push(o);
   }
 
   private mark(c: Candidate): boolean {
@@ -164,11 +197,17 @@ export class CandidateWatcher {
 
   private pass(): void {
     if (this.stopped) return;
-    this.lastPass = this.clock.now();
     this.opts.onPass?.();
-    for (const c of findCandidates(this.doc)) {
-      if (this.stopped) return;
-      if (this.mark(c)) this.onCandidate(c);
+    for (const root of shadowRootsOf(this.doc)) this.observe(root);
+    for (const c of findCandidates(this.doc, (el) => this.rejected.has(el))) {
+      if (this.stopped) break;
+      if (!this.mark(c)) continue;
+      try {
+        this.onCandidate(c);
+      } catch (e) {
+        console.error("Bouncer: candidate handler threw", e);
+      }
     }
+    this.lastPass = this.clock.now();
   }
 }
