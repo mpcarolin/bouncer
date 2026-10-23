@@ -43,7 +43,7 @@ import {
   reappeared,
   stillSame,
 } from "./page-checks.ts";
-import { replay } from "./replay.ts";
+import { recordBanner, replay } from "./replay.ts";
 import {
   type Actions,
   type HopDeps,
@@ -523,33 +523,37 @@ export class OwnPath {
   /**
    * The chooser's decision as a plan. `full` is the banner serialised with its hidden toggles,
    * for a save; `ser` is its visible part, what the decision was made on. A deterministic
-   * refusal is recorded as it acts, so it can be learned if it is verified (§2h).
+   * refusal is recorded (the banner, then each stage) as it acts, so it can be learned if it is
+   * verified (§2h).
    */
   private decided(r: Run, ser: Serialised, full: Serialised, d: Targeted, aiOnly: boolean): Plan {
     const banner = r.c.el;
+    const refusal = d.kind === "reject" || d.kind === "save" || d.kind === "settings";
     return {
       fresh: () => stillSame(r.c, ser, d.target),
       dismissed: DISMISSED_AS[d.kind],
       perform: async (deps): Promise<Performed> => {
+        // Nothing is learned from an AI-only click, so there is nothing to record for one.
+        const seen = refusal && !aiOnly ? recordBanner(banner, full) : undefined;
         if (d.kind === "settings") {
-          const stage1 = aiOnly ? undefined : recordDecision(banner, ser, d);
+          const stage1 = seen && recordDecision(banner, ser, d);
           const hop = await settingsHop({ banner, ser, target: d.target, aiOnly, deps });
           if (!hop.ok) return hop;
-          const flow = stage1 && hop.stage2 && { stage1, stage2: hop.stage2 };
+          const flow = seen && stage1 && hop.stage2 && { banner: seen, stage1, stage2: hop.stage2 };
           return { ok: true, panel: hop.panel, panelKey: hop.panelKey, flow };
         }
         if (d.kind === "save") {
-          const stage1 = aiOnly ? undefined : recordDecision(banner, full, d);
+          const stage1 = seen && recordDecision(banner, full, d);
           const saved = saveWithToggles(withHiddenToggles(d, full), full, banner, aiOnly, deps);
-          return saved.ok ? { ok: true, flow: stage1 && { stage1 } } : saved;
+          return saved.ok ? { ok: true, flow: seen && stage1 && { banner: seen, stage1 } } : saved;
         }
         const el = ser.elements.get(d.target);
         const control = ser.banner.controls.find((c) => c.id === d.target);
         if (!el || !control) return { ok: false, reason: "stale_target" };
-        const stage1 = d.kind === "reject" && !aiOnly ? recordDecision(banner, ser, d) : undefined;
+        const stage1 = seen && d.kind === "reject" ? recordDecision(banner, ser, d) : undefined;
         const click = deps.click(el, control, aiOnly);
         if (!click.ok) return { ok: false, reason: click.reason ?? "navigation" };
-        return { ok: true, flow: stage1 && { stage1 } };
+        return { ok: true, flow: seen && stage1 && { banner: seen, stage1 } };
       },
     };
   }
@@ -706,14 +710,18 @@ export class OwnPath {
       const wasBanner = r.entry.gate === "consent" || r.acted;
       const stale = r.replayed ? outcome === "failed" : r.mismatch !== undefined && wasBanner;
       if (this.rule && stale) {
-        this.rule = undefined;
-        await this.send({ type: "discardRule", site });
-        r.entry.notes.push("learned:discarded");
+        this.rule = undefined; // not tried again on this page, whatever the background did
+        const res = await this.send({ type: "discardRule", site });
+        r.entry.notes.push(res?.stored ? "learned:discarded" : "learned:discard_failed");
       }
-      if (r.flow && site && learnable(r.entry)) {
-        await this.send({ type: "saveRule", rule: recordRule(site, r.flow, this.clock.now()) });
-        r.entry.notes.push("learned:saved");
+      if (!learnable(r.entry)) return;
+      if (!r.flow || !site) {
+        r.entry.notes.push("learned:unrecordable");
+        return;
       }
+      const rule = recordRule(site, r.flow, this.clock.now());
+      const res = await this.send({ type: "saveRule", rule });
+      r.entry.notes.push(res?.stored ? "learned:saved" : "learned:save_failed");
     } catch (e) {
       r.entry.notes.push(`learned:${message(e)}`);
     }

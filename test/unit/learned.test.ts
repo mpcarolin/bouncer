@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isLearnedRule,
+  type LearnedBanner,
   type LearnedRule,
   LearnedRules,
   learnable,
@@ -8,6 +9,7 @@ import {
   type TargetRef,
 } from "../../src/core/learned.ts";
 import type { LogEntry } from "../../src/core/log.ts";
+import type { KV } from "../../src/core/platform.ts";
 import { MemoryKV } from "../helpers/fake-platform.ts";
 
 const entry = (over: Partial<LogEntry> = {}): LogEntry => ({
@@ -32,9 +34,15 @@ const ref = (selector: string, text: string, label: TargetRef["label"]): TargetR
   label,
 });
 
+const banner: LearnedBanner = {
+  controls: ["accept|accept all", "reject|reject all"],
+  locator: "#cookie-notice",
+};
+
 const rejectRule = (site = "example.com"): LearnedRule => ({
   site,
   createdAt: 1,
+  banner,
   stage1: {
     action: "reject",
     target: ref(":scope > button:nth-of-type(2)", "Reject all", "reject"),
@@ -44,6 +52,7 @@ const rejectRule = (site = "example.com"): LearnedRule => ({
 const settingsRule = (): LearnedRule => ({
   site: "example.com",
   createdAt: 1,
+  banner: { controls: ["accept|accept", "settings|cookie settings"] },
   stage1: { action: "settings", target: ref("#prefs-open", "Cookie settings", "settings") },
   stage2: {
     action: "save",
@@ -87,11 +96,13 @@ describe("learnable", () => {
 
 describe("recordRule", () => {
   it("dates the recorded stages and names the site", () => {
-    const { stage1, stage2 } = settingsRule();
-    const rule = recordRule("example.com", { stage1, stage2 }, 42);
-    expect(rule).toEqual({ site: "example.com", createdAt: 42, stage1, stage2 });
+    const { banner: b, stage1, stage2 } = settingsRule();
+    const rule = recordRule("example.com", { banner: b, stage1, stage2 }, 42);
+    expect(rule).toEqual({ site: "example.com", createdAt: 42, banner: b, stage1, stage2 });
     expect(isLearnedRule(rule)).toBe(true);
-    expect(recordRule("example.com", { stage1: rejectRule().stage1 }, 1)).toEqual(rejectRule());
+    expect(recordRule("example.com", { banner, stage1: rejectRule().stage1 }, 1)).toEqual(
+      rejectRule(),
+    );
   });
 });
 
@@ -124,6 +135,26 @@ describe("isLearnedRule", () => {
     expect(isLearnedRule({ ...s, stage2: { ...s.stage2, toggles: [] } })).toBe(false);
     const withToggles = { ...rejectRule().stage1, toggles: s.stage2?.toggles };
     expect(isLearnedRule({ ...rejectRule(), stage1: withToggles })).toBe(false);
+  });
+
+  it("needs the banner's fingerprint: label|text controls with known labels, and a locator if any", () => {
+    const r = rejectRule();
+    expect(isLearnedRule({ ...r, banner: { controls: ["reject|reject all"] } })).toBe(true);
+    for (const bad of [
+      undefined,
+      {},
+      { controls: [] },
+      { controls: ["reject all"] },
+      { controls: ["|reject all"] },
+      { controls: ["refuse|reject all"] },
+      { controls: ["constructor|x"] },
+      { controls: [3] },
+      { controls: "reject|reject all" },
+      { controls: ["reject|reject all"], locator: "" },
+      { controls: ["reject|reject all"], locator: 7 },
+    ]) {
+      expect(isLearnedRule({ ...r, banner: bad })).toBe(false);
+    }
   });
 
   it("refuses malformed values", () => {
@@ -177,17 +208,50 @@ describe("LearnedRules", () => {
     ]);
   });
 
-  it("drops stored entries that aren't valid rules, or are filed under another site", async () => {
+  it("keeps one key per site, plus an index of the sites, and get reads only the site's key", async () => {
     const kv = new MemoryKV();
-    await kv.set("learnedRules", {
-      "example.com": rejectRule(),
-      "bad.example": { site: "bad.example" },
-      "moved.example": rejectRule("elsewhere.example"),
-    });
+    const read: string[] = [];
+    const watched: KV = {
+      get: (k) => {
+        read.push(k);
+        return kv.get(k);
+      },
+      set: (k, v) => kv.set(k, v),
+      remove: (k) => kv.remove(k),
+    };
+    const rules = new LearnedRules(watched);
+    await rules.put(rejectRule());
+    await rules.put(rejectRule("other.example"));
+    expect(await kv.get("learnedRule:example.com")).toEqual(rejectRule());
+    expect(await kv.get("learnedRuleSites")).toEqual(["example.com", "other.example"]);
+
+    read.length = 0;
+    expect(await rules.get("other.example")).toEqual(rejectRule("other.example"));
+    expect(read).toEqual(["learnedRule:other.example"]);
+
+    await rules.remove("example.com");
+    expect(await kv.get("learnedRule:example.com")).toBeUndefined();
+    expect(await kv.get("learnedRuleSites")).toEqual(["other.example"]);
+  });
+
+  it("ignores stored entries that aren't valid rules, or are filed under another site", async () => {
+    const kv = new MemoryKV();
+    await kv.set("learnedRuleSites", [
+      "example.com",
+      "bad.example",
+      "moved.example",
+      "gone.example",
+    ]);
+    await kv.set("learnedRule:example.com", rejectRule());
+    await kv.set("learnedRule:bad.example", { site: "bad.example" });
+    await kv.set("learnedRule:moved.example", rejectRule("elsewhere.example"));
     const rules = new LearnedRules(kv);
     expect(await rules.list()).toEqual([rejectRule()]);
     expect(await rules.get("bad.example")).toBeUndefined();
     expect(await rules.get("moved.example")).toBeUndefined();
+    const { banner: _, ...noBanner } = rejectRule("old.example");
+    await kv.set("learnedRule:old.example", noBanner); // the format before banners
+    expect(await rules.get("old.example")).toBeUndefined();
   });
 
   it("refuses to store an invalid rule, and inherited names are not sites", async () => {

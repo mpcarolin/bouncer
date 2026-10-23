@@ -11,13 +11,14 @@ import {
 } from "../choose.ts";
 import { PANEL_WAIT_MS } from "../config.ts";
 import { labelDeterministic, mergeAiLabels } from "../label.ts";
-import { type LearnedStage, type RecordedFlow, recordStage, type Stage2 } from "../learned.ts";
+import type { LearnedStage, RecordedFlow, Stage2 } from "../learned.ts";
 import type { ClickResult } from "../page/click.ts";
 import { clickability } from "../page/clickable.ts";
 import { hashText } from "../page/detect.ts";
 import { textOf } from "../page/dom.ts";
 import type { Hider } from "../page/hide.ts";
 import { findPanel, snapshotRendered } from "../page/panel.ts";
+import { recordStage } from "../page/selector.ts";
 import { type Serialised, serialise } from "../page/serialise.ts";
 import { readToggle, recheck, setToggles } from "../page/toggles.ts";
 import type { Control, Decision, Label, Outcome, SerialisedBanner } from "../types.ts";

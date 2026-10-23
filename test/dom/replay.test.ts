@@ -1,13 +1,17 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { type LearnedRule, resolveSelector, selectorFor } from "../../src/core/learned.ts";
+import type { AiResult } from "../../src/core/ai.ts";
+import type { LearnedBanner, LearnedRule } from "../../src/core/learned.ts";
 import type { LogEntry } from "../../src/core/log.ts";
 import { clickability } from "../../src/core/page/clickable.ts";
+import { resolveSelector, selectorFor } from "../../src/core/page/selector.ts";
 import { serialise } from "../../src/core/page/serialise.ts";
-import { replay } from "../../src/core/pipeline/replay.ts";
+import { recordBanner, replay } from "../../src/core/pipeline/replay.ts";
 import type { ContentPlatform } from "../../src/core/platform.ts";
 import { siteOf } from "../../src/core/settings.ts";
+import type { Label, SerialisedBanner } from "../../src/core/types.ts";
 import { mount, mountPage } from "../helpers/mount.ts";
 import {
+  Agreeable,
   byId,
   Counting,
   cleanup,
@@ -20,6 +24,7 @@ import {
 declare global {
   interface Window {
     __consent?: string;
+    __newsletter?: string;
   }
 }
 
@@ -28,6 +33,7 @@ const site = siteOf(location.href);
 afterEach(() => {
   cleanup();
   delete window.__consent;
+  delete window.__newsletter;
 });
 
 /** A first visit: the pipeline refuses on `page`, and what it learned is returned. */
@@ -57,6 +63,29 @@ function recording(sent: string[]): StartOpts["platform"] {
 }
 
 const ruleChanges = (sent: string[]) => sent.filter((t) => t === "saveRule" || t === "discardRule");
+/** Corroborates everything, and labels "Keep these" (which no rule labels) save. */
+class KeepTheseIsSave extends Agreeable {
+  override async labelControls(
+    b: SerialisedBanner,
+    ids: number[],
+  ): Promise<AiResult<Record<number, Label>>> {
+    const r = await super.labelControls(b, ids);
+    if (r.kind !== "answer") return r;
+    const value = { ...r.value };
+    for (const id of ids) {
+      if (b.controls.find((c) => c.id === id)?.text === "Keep these") value[id] = "save";
+    }
+    return { ...r, value };
+  }
+}
+
+/** The fingerprint a rule learned on `el` would carry, for rules written by hand. */
+function bannerOf(el: Element): LearnedBanner {
+  const b = recordBanner(el, serialise({ el }, clickability, { hiddenToggles: true }));
+  if (!b) throw new Error("not a banner a rule could be learned on");
+  return b;
+}
+
 const checked = (id: string) => (byId(id) as HTMLInputElement).checked;
 const buttons = (id: string) => [...byId(id).querySelectorAll("button")];
 
@@ -91,10 +120,12 @@ describe("selectorFor", () => {
     expect(resolveSelector(wrapper, selectorFor(c as Element, wrapper))).toEqual([c]);
   });
 
-  test("keeps data-*, aria-label, name, type and role; leaves out Bouncer's attribute and generated values", () => {
-    const root = mount(`<div><span data-bouncer-hidden data-testid="row" data-uid="a8f3c9d2e1">
+  test("keeps data-*, aria-label, name, type and role; leaves out Bouncer's attribute, state attributes, and generated names and values", () => {
+    const root = mount(`<div><span data-bouncer-hidden data-testid="row" data-uid="a8f3c9d2e1"
+      data-state="open" data-v-7ba5bd90>
       <button type="button" name="deny" role="button" aria-label="Reject all cookies"
-        data-action="reject" class="btn" onclick="void 0">Reject</button></span></div>`);
+        data-action="reject" data-headlessui-state="active" data-focused="true" data-hovered
+        data-pressed="false" class="btn" onclick="void 0">Reject</button></span></div>`);
     const el = root.querySelector("button") as Element;
     const sel = selectorFor(el, root);
     expect(sel).toBe(
@@ -138,6 +169,31 @@ describe("selectorFor", () => {
     expect(resolveSelector(banner, selectorFor(accept as Element, banner))).toEqual([accept]);
   });
 
+  test("finds nothing outside the root, and nothing for a selector outside its own grammar", () => {
+    mount(`<div id="outside-el"><button id="x">Out</button></div>`);
+    const root = mount(`<div><button id="in">In</button></div>`);
+    expect(resolveSelector(root, "#outside-el")).toEqual([]);
+    expect(resolveSelector(root, "#x, body button")).toEqual([]);
+    expect(resolveSelector(root, "#in, body button")).toEqual([]);
+    expect(resolveSelector(root, ":scope > div:nth-of-type(1) > button, body button")).toEqual([]);
+    expect(resolveSelector(root, ":scope button")).toEqual([]);
+    expect(resolveSelector(root, ":scope > div:nth-of-type(1) > button:hover")).toEqual([]);
+    expect(resolveSelector(root, "div:nth-of-type(1) > button:nth-of-type(1)")).toEqual([]);
+    // What selectorFor writes for the same control still works.
+    expect(resolveSelector(root, "#in")).toEqual([byId("in")]);
+  });
+
+  test("a toggle's path leaves out data-* and aria-label: its state shows there", () => {
+    const root = mount(`<div><button role="switch" aria-checked="true" data-state="checked"
+      aria-label="Analytics: on">Analytics</button></div>`);
+    const sw = root.querySelector("button") as Element;
+    const sel = selectorFor(sw, root, { toggle: true });
+    expect(sel).toBe(':scope > div:nth-of-type(1) > button[role="switch"]:nth-of-type(1)');
+    sw.setAttribute("data-state", "unchecked");
+    sw.setAttribute("aria-label", "Analytics: off");
+    expect(resolveSelector(root, sel)).toEqual([sw]);
+  });
+
   test("a malformed or dangling selector finds nothing", () => {
     const root = mount(`<div><button>Reject</button></div>`);
     expect(resolveSelector(root, ":scope > button[")).toEqual([]);
@@ -151,6 +207,10 @@ describe("learned rules (§2h)", () => {
     const { rule } = await learn("custom-reject");
     expect(rule).toMatchObject({
       site,
+      banner: {
+        controls: ["accept|accept all", "reject|reject all"],
+        locator: "#my-cookie-notice",
+      },
       stage1: { action: "reject", target: { text: "Reject all", label: "reject" } },
     });
     expect(rule.stage2).toBeUndefined();
@@ -251,19 +311,29 @@ describe("learned rules (§2h)", () => {
     const banner = byId("my-cookie-notice");
     (buttons("my-cookie-notice")[1] as Element).textContent = "Decline all";
 
-    // The check alone: it never acts.
+    // The check alone: it never acts. A changed text changes the banner's fingerprint; with the
+    // same controls in other places, stage 1's own text check catches it.
     let acted = false;
-    const full = serialise({ el: banner }, clickability, { hiddenToggles: true });
-    const res = await replay(rule, {
-      banner,
-      full,
-      act: async () => {
-        acted = true;
-        return { outcome: "dismissed" };
-      },
+    const tryIt = () =>
+      replay(rule, {
+        banner,
+        full: serialise({ el: banner }, clickability, { hiddenToggles: true }),
+        act: async () => {
+          acted = true;
+          return { outcome: "dismissed" };
+        },
+      });
+    expect(await tryIt()).toEqual({
+      outcome: "discard_and_run_pipeline",
+      reason: "banner_changed",
     });
-    expect(res).toEqual({ outcome: "discard_and_run_pipeline", reason: "text_changed" });
+    const [first, second] = buttons("my-cookie-notice") as Element[] as [Element, Element];
+    first.textContent = "Reject all";
+    second.textContent = "Accept all";
+    expect(await tryIt()).toEqual({ outcome: "discard_and_run_pipeline", reason: "text_changed" });
     expect(acted).toBe(false);
+    first.textContent = "Accept all";
+    second.textContent = "Decline all";
 
     // In the pipeline: the rule goes, and the full pipeline runs on the same banner untouched.
     const provider = new Counting();
@@ -277,7 +347,7 @@ describe("learned rules (§2h)", () => {
 
     const e = await h.path.done;
     expect(touchedAtGate).toBe(0);
-    expect(e.notes).toContain("learned:mismatch:text_changed");
+    expect(e.notes).toContain("learned:mismatch:banner_changed");
     expect(e).toMatchObject({
       outcome: "dismissed",
       path: "ai",
@@ -433,6 +503,34 @@ describe("learned rules (§2h)", () => {
     expect(window.__consent).toBeUndefined();
   });
 
+  test("the banner is checked again after the claim: a control added meanwhile → unsure stale_target", async () => {
+    const { rule } = await learn("custom-reject");
+    mountPage("custom-reject");
+    const banner = byId("my-cookie-notice");
+    const h = await start({
+      rules: [rule],
+      // Just as Bouncer claims the page, the banner becomes another one: it gains a control.
+      platform: (content) => ({
+        onMessage: (fn) => content.onMessage(fn),
+        send: ((m) => {
+          if (m.type === "claim")
+            banner.insertAdjacentHTML("beforeend", "<button>Customise</button>");
+          return content.send(m);
+        }) as ContentPlatform["send"],
+      }),
+    });
+
+    const e = await h.path.done;
+    expect(e).toMatchObject({
+      outcome: "unsure",
+      reason: "stale_target",
+      path: "learned",
+      clicked: [],
+    });
+    expect(h.clicks).toEqual([]);
+    expect(window.__clicked).toBeUndefined();
+  });
+
   test("a replay whose target now reads accept-all fails the §0 guard → discard and run the pipeline", async () => {
     const { rule } = await learn("custom-reject");
     mountPage("custom-reject");
@@ -465,6 +563,7 @@ describe("learned rules (§2h)", () => {
     const rule: LearnedRule = {
       site,
       createdAt: Date.now(),
+      banner: bannerOf(banner),
       stage1: { action: "reject", target: { selector, text: "Accept all", label: "reject" } },
     };
     const h = await start({ rules: [rule] });
@@ -489,6 +588,7 @@ describe("learned rules (§2h)", () => {
     const rule: LearnedRule = {
       site,
       createdAt: Date.now(),
+      banner: bannerOf(banner),
       stage1: {
         action: "reject",
         target: { selector: selectorFor(reject, banner), text: "Reject all", label: "reject" },
@@ -524,7 +624,7 @@ describe("learned rules (§2h)", () => {
       ["not_consent", "ai"],
       ["dismissed", "learned"],
     ]);
-    expect(all[0]?.notes).toContain("learned:mismatch:text_changed");
+    expect(all[0]?.notes).toContain("learned:mismatch:no_consent_wording");
     expect(window.__clicked).toBe("reject");
     expect(ruleChanges(sent)).toEqual([]);
     expect(await h.app.rules.get(site)).toEqual(rule);
@@ -540,10 +640,130 @@ describe("learned rules (§2h)", () => {
     const h = await start({ rules: [rule], platform: recording(sent) });
 
     const e = await h.path.done;
-    expect(e.notes).toContain("learned:mismatch:text_changed");
+    expect(e.notes).toContain("learned:mismatch:banner_changed");
     expect(e).toMatchObject({ outcome: "unsure", reason: "model_timeout", clicked: [] });
     expect(ruleChanges(sent)).toEqual([]);
     expect(await h.app.rules.get(site)).toEqual(rule);
+  });
+
+  test("a same-site newsletter modal whose control collides with the rule's target is not replayed; the real banner is", async () => {
+    const { rule } = await learn("cookie-no-thanks");
+    expect(rule.stage1.target).toMatchObject({ text: "No thanks", label: "reject" });
+    // Built from the same component: the "No thanks" sits where the banner's reject does, with
+    // the same text and the same regex label.
+    const decoy = (text: string, first: string) =>
+      mount(`<div class="modal" style="position:fixed;inset:10% 20%;background:#fff;z-index:10000">${text}
+        <button onclick="window.__newsletter='${first}'">${first}</button>
+        <button onclick="window.__newsletter='no'; this.parentElement.remove()">No thanks</button></div>`)
+        .firstElementChild as Element;
+    // No cookie or consent wording, though the controls are the banner's own.
+    const promo = decoy("Get 10% off your first order. See our privacy policy.", "Accept all");
+    // Cookie wording, but other controls.
+    const news = decoy("Cookie recipes every week in our newsletter. Privacy policy.", "Subscribe");
+    mountPage("cookie-no-thanks");
+    const [promoNo, newsNo] = [promo, news].map((m) => m.querySelectorAll("button")[1]);
+    expect(resolveSelector(promo, rule.stage1.target.selector)).toEqual([promoNo]);
+    expect(resolveSelector(news, rule.stage1.target.selector)).toEqual([newsNo]);
+    const sent: string[] = [];
+    const h = await start({ rules: [rule], platform: recording(sent) });
+
+    const e = await h.path.done;
+    expect(e).toMatchObject({ outcome: "dismissed", path: "learned", modelCalls: [] });
+    expect(window.__clicked).toBe("reject");
+    expect(window.__newsletter).toBeUndefined();
+    expect(h.clicks).not.toContain(promoNo);
+    expect(h.clicks).not.toContain(newsNo);
+    const all = await h.entries();
+    expect(
+      all.map((x: LogEntry) => [x.outcome, x.path, x.notes.find((n) => n.startsWith("learned:"))]),
+    ).toEqual([
+      ["not_consent", "ai", "learned:mismatch:no_consent_wording"],
+      ["not_consent", "ai", "learned:mismatch:banner_changed"],
+      ["dismissed", "learned", undefined],
+    ]);
+    expect(ruleChanges(sent)).toEqual([]);
+    expect(await h.app.rules.get(site)).toEqual(rule);
+  });
+
+  test("a Radix-style switch recorded on, and off on the next visit, is still found and not clicked", async () => {
+    const { rule } = await learn("settings-radix");
+    expect(window.__consent).toBeUndefined(); // cleared after the first visit
+    const [toggle] = rule.stage1.toggles ?? [];
+    expect(toggle).toMatchObject({
+      ref: { text: "Analytics", label: "toggle-optional" },
+      to: false,
+    });
+    expect(toggle?.ref.selector).not.toContain("data-state");
+
+    mountPage("settings-radix");
+    const sw = byId("rx-banner").querySelector('[role="switch"]') as Element;
+    sw.setAttribute("aria-checked", "false");
+    sw.setAttribute("data-state", "unchecked");
+    const h = await start({ rules: [rule] });
+
+    const e = await h.path.done;
+    expect(e).toMatchObject({
+      outcome: "dismissed",
+      path: "learned",
+      clicked: [{ text: "Save choices" }],
+      toggles: [],
+    });
+    expect(h.clicks).not.toContain(sw);
+    expect(window.__consent).toBe("ana=false");
+  });
+
+  test("an AI-only stage-1 settings click, or an AI-only stage-2 save, is never learned", async () => {
+    for (const [prepare, aiOnlyAt] of [
+      [() => ((buttons("cookie-bar")[0] as Element).textContent = "Our partners"), 0],
+      [
+        () =>
+          ((byId("cookie-prefs").querySelector("button") as Element).textContent = "Keep these"),
+        1,
+      ],
+    ] as const) {
+      mountPage("custom-settings");
+      prepare();
+      const sent: string[] = [];
+      const h = await start({ provider: new KeepTheseIsSave(), platform: recording(sent) });
+
+      const e = await h.path.done;
+      expect(e.outcome).toBe("dismissed");
+      expect(e.clicked.map((c) => c.aiOnly)).toEqual([aiOnlyAt === 0, aiOnlyAt === 1]);
+      expect(ruleChanges(sent)).toEqual([]);
+      expect(e.notes.filter((n) => n.startsWith("learned:"))).toEqual([]);
+      expect(await h.app.rules.list()).toEqual([]);
+      cleanup();
+    }
+  });
+
+  test("the notes say what the background did: a refused save is save_failed, an unrecordable flow says so", async () => {
+    mountPage("custom-reject");
+    let h = await start({
+      platform: (content) => ({
+        onMessage: (fn) => content.onMessage(fn),
+        send: ((m) =>
+          m.type === "saveRule"
+            ? Promise.resolve({ stored: false })
+            : content.send(m)) as ContentPlatform["send"],
+      }),
+    });
+    let e = await h.path.done;
+    expect(e.outcome).toBe("dismissed");
+    expect(e.notes).toContain("learned:save_failed");
+    expect(e.notes).not.toContain("learned:saved");
+    cleanup();
+
+    // "Tracking" passes the gate, but with no cookie or consent wording a replay could never
+    // recognise the banner, so there is no rule to record.
+    mount(`<div class="banner" id="trk" style="position:fixed;bottom:0;left:0;right:0;z-index:9999">
+      We use tracking technologies. See our privacy notice.
+      <button onclick="window.__clicked='reject'; this.parentElement.remove()">Reject all</button></div>`);
+    const sent: string[] = [];
+    h = await start({ platform: recording(sent) });
+    e = await h.path.done;
+    expect(e).toMatchObject({ outcome: "dismissed", path: "ai" });
+    expect(e.notes).toContain("learned:unrecordable");
+    expect(ruleChanges(sent)).toEqual([]);
   });
 
   test("autoconsent owns the page: the replay stands down at the claim, nothing touched, rule kept", async () => {

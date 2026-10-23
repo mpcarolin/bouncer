@@ -1,0 +1,12 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Radix-style switch in the banner</title><style>
+body { font: 16px system-ui; margin: 0; } main { padding: 24px; height: 3000px; }
+.banner { position: fixed; left: 0; right: 0; bottom: 0; background: #222; color: #fff; padding: 16px; z-index: 9999; }
+</style></head>
+<body><main><h1>A switch whose state shows in data-state</h1><p>Expected: no reject, so stage 1 saves: the Analytics switch (aria-checked, data-state) goes off, then "Save choices" is clicked.</p></main>
+<div class="banner" id="rx-banner">We use cookies. Choose which ones we may use.
+  <button role="switch" aria-checked="true" data-state="checked" onclick="rxFlip(this)">Analytics</button>
+  <button onclick="window.__consent='ana='+document.querySelector('#rx-banner [role=switch]').getAttribute('aria-checked'); this.parentElement.remove()">Save choices</button>
+  <button onclick="window.__clicked='accept'; this.parentElement.remove()">Accept all</button></div>
+<script>
+function rxFlip(b){ var on = b.getAttribute('aria-checked') !== 'true'; b.setAttribute('aria-checked', String(on)); b.setAttribute('data-state', on ? 'checked' : 'unchecked'); }
+</script></body></html>

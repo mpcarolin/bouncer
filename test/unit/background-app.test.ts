@@ -390,6 +390,7 @@ describe("saveRule and discardRule", () => {
   const rule = (site: string): LearnedRule => ({
     site,
     createdAt: 1,
+    banner: { controls: ["accept|accept all", "reject|reject all"] },
     stage1: {
       action: "reject",
       target: { selector: ":scope > button:nth-of-type(2)", text: "Reject all", label: "reject" },
@@ -399,7 +400,9 @@ describe("saveRule and discardRule", () => {
   it("saveRule stores the top frame's rule; hello then returns it for the site, www. or not", async () => {
     const { bg, app } = started();
     const top = fakeContent(bg, { url: "https://www.shop.example/cart" });
-    expect(await top.send({ type: "saveRule", rule: rule("shop.example") })).toBeUndefined();
+    expect(await top.send({ type: "saveRule", rule: rule("shop.example") })).toEqual({
+      stored: true,
+    });
     expect(await app.rules.get("shop.example")).toEqual(rule("shop.example"));
 
     const next = fakeContent(bg, { tabId: 2, url: "https://shop.example/" });
@@ -412,16 +415,22 @@ describe("saveRule and discardRule", () => {
   it("ignores a rule for another site, an invalid one, and one from a child frame", async () => {
     const { bg, app } = started();
     const top = fakeContent(bg, { url: "https://shop.example/" });
-    await top.send({ type: "saveRule", rule: rule("other.example") });
+    const refused = { stored: false };
+    expect(await top.send({ type: "saveRule", rule: rule("other.example") })).toEqual(refused);
     // A reject needs no second stage: a rule that has one is malformed.
     const stage2 = { action: "reject" as const, target: rule("x").stage1.target };
-    await top.send({ type: "saveRule", rule: { ...rule("shop.example"), stage2 } });
+    const malformed = { ...rule("shop.example"), stage2 };
+    expect(await top.send({ type: "saveRule", rule: malformed })).toEqual(refused);
+    const { banner: _, ...noBanner } = rule("shop.example");
+    expect(await top.send({ type: "saveRule", rule: noBanner as unknown as LearnedRule })).toEqual(
+      refused,
+    );
     const child = fakeContent(bg, {
       frameId: 3,
       url: "https://shop.example/frame",
       tabUrl: "https://shop.example/",
     });
-    await child.send({ type: "saveRule", rule: rule("shop.example") });
+    expect(await child.send({ type: "saveRule", rule: rule("shop.example") })).toEqual(refused);
     expect(await app.rules.list()).toEqual([]);
   });
 
@@ -430,9 +439,13 @@ describe("saveRule and discardRule", () => {
     await app.rules.put(rule("shop.example"));
     await app.rules.put(rule("other.example"));
     const top = fakeContent(bg, { url: "https://shop.example/" });
-    expect(await top.send({ type: "discardRule", site: "other.example" })).toBeUndefined();
+    expect(await top.send({ type: "discardRule", site: "other.example" })).toEqual({
+      stored: false,
+    });
     expect(await app.rules.list()).toHaveLength(2);
-    await top.send({ type: "discardRule", site: "shop.example" });
+    expect(await top.send({ type: "discardRule", site: "shop.example" })).toEqual({
+      stored: true,
+    });
     expect(await app.rules.list()).toEqual([rule("other.example")]);
   });
 
@@ -458,8 +471,8 @@ describe("saveRule and discardRule", () => {
       type: "saveRule",
       rule: rule("shop.example"),
     });
-    expect(await bg.local.get("learnedRules")).toEqual({ "shop.example": rule("shop.example") });
-    expect(await bg.session.get("learnedRules")).toBeUndefined();
+    expect(await bg.local.get("learnedRule:shop.example")).toEqual(rule("shop.example"));
+    expect(await bg.session.get("learnedRule:shop.example")).toBeUndefined();
   });
 });
 

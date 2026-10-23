@@ -1,12 +1,16 @@
 // §2h: replaying a learned rule stage by stage, with every §0 guard and no model calls. What is
-// the rule's own lives here: the checks before each stage, and what each stage clicks. The claim,
-// the hiding, §2g's verification and the ending are the own path's (`OwnPath.act`), the same as
-// for a decision the chooser made; the settings hop and the save are settings-hop.ts's.
+// the rule's own lives here: which banner it is for, the checks before each stage, and what each
+// stage clicks. The claim, the hiding, §2g's verification and the ending are the own path's
+// (`OwnPath.act`), the same as for a decision the chooser made; the settings hop and the save are
+// settings-hop.ts's.
 import { labelDeterministic } from "../label.ts";
-import { type LearnedRule, type LearnedStage, resolveSelector, type Stage2 } from "../learned.ts";
+import type { LearnedBanner, LearnedRule, LearnedStage, Stage2 } from "../learned.ts";
 import { clickability } from "../page/clickable.ts";
+import { CONSENT_WORDING } from "../page/detect.ts";
+import { locatorFor, resolveSelector } from "../page/selector.ts";
 import { type Serialised, serialise, shownOnly } from "../page/serialise.ts";
 import { readToggle } from "../page/toggles.ts";
+import { normalise } from "../text/normalise.ts";
 import type { Outcome } from "../types.ts";
 import {
   clickTarget,
@@ -21,6 +25,45 @@ import {
 } from "./settings-hop.ts";
 
 const POLL_MS = 100;
+
+/**
+ * The candidate's visible buttons and links as `${label}|${normalised text}`, sorted, labelled
+ * as stage 1's chooser labels them (deterministically; `other` where the rules leave a control
+ * to the AI). `full` is the candidate serialised with its hidden toggles.
+ */
+export function bannerControls(full: Serialised): string[] {
+  const shown = shownOnly(full);
+  const labels = labelDeterministic(shown.banner);
+  return shown.banner.controls
+    .filter((c) => c.role === "button" || c.role === "link")
+    .map((c) => `${labels.get(c.id)?.label ?? "other"}|${normalise(c.text)}`)
+    .sort();
+}
+
+/**
+ * What a rule keeps of the banner it was learned on: its controls, and its locator when stable.
+ * Undefined when a replay could never match it (no cookie or consent wording, no controls).
+ */
+export function recordBanner(el: Element, full: Serialised): LearnedBanner | undefined {
+  if (!CONSENT_WORDING.test(full.banner.text)) return undefined;
+  const controls = bannerControls(full);
+  if (controls.length === 0) return undefined;
+  const locator = locatorFor(el);
+  return locator ? { controls, locator } : { controls };
+}
+
+/**
+ * Why the rule is not for this candidate, or undefined when it is: the candidate must have cookie
+ * or consent wording and exactly the rule's controls. A newsletter modal or age gate built from
+ * the same component, whose "No thanks" sits where the banner's reject did, fails this.
+ */
+export function checkBanner(banner: LearnedBanner, full: Serialised): string | undefined {
+  if (!CONSENT_WORDING.test(full.banner.text)) return "no_consent_wording";
+  const now = bannerControls(full);
+  const same =
+    now.length === banner.controls.length && now.every((c, i) => c === banner.controls[i]);
+  return same ? undefined : "banner_changed";
+}
 
 /** A stage's controls, found in its root and checked: their ids in the root's serialisation. */
 export interface Checked {
@@ -100,21 +143,23 @@ export interface ReplayDeps {
 }
 
 /**
- * How a replay ended. `discard_and_run_pipeline`: stage 1 failed its checks before anything was
- * touched, so the rule no longer fits this candidate and the full pipeline should decide on it.
+ * How a replay ended. `discard_and_run_pipeline`: the candidate is not the rule's banner, or
+ * stage 1 failed its checks, before anything was touched; the full pipeline decides on it.
  */
 export type ReplayResult =
   | { outcome: Outcome; reason?: string }
   | { outcome: "discard_and_run_pipeline"; reason: string };
 
 /**
- * §2h's five steps for `rule` on one candidate: check stage 1 before any action; act (through
- * `d.act`, so only after the claim); after a settings click, wait up to the panel window for
- * stage 2's targets and check them, any failure from there on being `failed`; set toggles to
- * their target states, clicking only those that differ; re-read them (§2f.2) before saving; and
- * verify (§2g). No model call is made.
+ * §2h's five steps for `rule` on one candidate, once it is the rule's banner (`checkBanner`):
+ * check stage 1 before any action; act (through `d.act`, so only after the claim); after a
+ * settings click, wait up to the panel window for stage 2's targets and check them, any failure
+ * from there on being `failed`; set toggles to their target states, clicking only those that
+ * differ; re-read them (§2f.2) before saving; and verify (§2g). No model call is made.
  */
 export async function replay(rule: LearnedRule, d: ReplayDeps): Promise<ReplayResult> {
+  const other = checkBanner(rule.banner, d.full);
+  if (other) return { outcome: "discard_and_run_pipeline", reason: other };
   const first = checkStage(rule.stage1, d.banner, d.full, true);
   if (!first.ok) return { outcome: "discard_and_run_pipeline", reason: first.reason };
   return d.act(planFor(rule, d.banner, first));
@@ -124,10 +169,11 @@ function planFor(rule: LearnedRule, banner: Element, first: Checked): Plan {
   const target = first.ser.elements.get(first.target);
   let now = first;
   return {
-    // Stage 1's checks again, toggles and all, on the same target: the claim wait gave the site
-    // time to change the banner, and a replay has no gate to fall back on.
+    // The banner's and stage 1's checks again, toggles and all, on the same target: the claim
+    // wait gave the site time to change the banner, and a replay has no gate to fall back on.
     fresh: () => {
       const ser = serialise({ el: banner }, clickability, { hiddenToggles: true });
+      if (checkBanner(rule.banner, ser)) return false;
       const again = checkStage(rule.stage1, banner, ser, true);
       if (!again.ok || again.ser.elements.get(again.target) !== target) return false;
       now = again;

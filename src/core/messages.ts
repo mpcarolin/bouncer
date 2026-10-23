@@ -195,8 +195,9 @@ interface Replies {
   claim: { granted: boolean; reason?: "autoconsent" | "already" | "stale" };
   log: { id: string };
   logPatch: void;
-  saveRule: void;
-  discardRule: void;
+  /** `stored`: the background stored the rule (or removed it) for the sender's own site. */
+  saveRule: { stored: boolean };
+  discardRule: { stored: boolean };
 }
 
 /** The reply type for a message, chosen by its `type` (and, for `ai`, its `op`). */

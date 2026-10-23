@@ -20,7 +20,11 @@ describe("ReplyOf", () => {
     expectTypeOf<ReplyOf<{ type: "ai"; op: "corroborate"; args: never }>>().toEqualTypeOf<
       AiResult<boolean>
     >();
-    expectTypeOf<ReplyOf<{ type: "discardRule"; site: string }>>().toEqualTypeOf<void>();
+    expectTypeOf<ReplyOf<{ type: "discardRule"; site: string }>>().toEqualTypeOf<{
+      stored: boolean;
+    }>();
+    expectTypeOf<ReplyOf<{ type: "saveRule"; rule: never }>>().toEqualTypeOf<{ stored: boolean }>();
+    expectTypeOf<ReplyOf<{ type: "logPatch"; id: string; patch: never }>>().toEqualTypeOf<void>();
     expectTypeOf<ReplyOf<ToBackground>>().not.toBeNever();
   });
 });

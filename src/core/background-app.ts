@@ -122,14 +122,19 @@ export function startBackground(
     };
   }
 
-  /** Stores a rule for the sender's own site only; anything else is ignored. */
-  async function saveRule(rule: unknown, from: Sender): Promise<void> {
+  /** Stores a well-formed rule for the sender's own site only; anything else is refused. */
+  async function saveRule(rule: unknown, from: Sender): Promise<{ stored: boolean }> {
     const site = ruleSite(from);
-    if (site && isLearnedRule(rule) && rule.site === site) await rules.put(rule);
+    if (!site || !isLearnedRule(rule) || rule.site !== site) return { stored: false };
+    await rules.put(rule);
+    return { stored: true };
   }
 
-  async function discardRule(site: unknown, from: Sender): Promise<void> {
-    if (site !== "" && site === ruleSite(from)) await rules.remove(site);
+  /** Removes the rule of the sender's own site only. */
+  async function discardRule(site: unknown, from: Sender): Promise<{ stored: boolean }> {
+    if (site === "" || site !== ruleSite(from)) return { stored: false };
+    await rules.remove(site);
+    return { stored: true };
   }
 
   function claim(from: Sender) {

@@ -1,0 +1,9 @@
+<!doctype html><html><head><meta charset="utf-8"><title>cookie banner: "No thanks"</title><style>
+body { font: 16px system-ui; margin: 0; } main { padding: 24px; height: 3000px; }
+.banner { position: fixed; left: 0; right: 0; bottom: 0; background: #222; color: #fff; padding: 16px; z-index: 9999; }
+.modal { position: fixed; inset: 10% 20%; background: #fff; border: 1px solid #999; padding: 16px; z-index: 10000; }
+</style></head>
+<body><main><h1>Cookie banner whose reject reads "No thanks"</h1><p>Expected: "No thanks" is a regex reject and is clicked. Its learned rule must not fire on a newsletter modal or promo built the same way.</p></main>
+<div class="banner" id="nt-banner">We use cookies to measure traffic and show ads.
+  <button onclick="window.__clicked='accept'; this.parentElement.remove()">Accept all</button> <button onclick="window.__clicked='reject'; this.parentElement.remove()">No thanks</button></div>
+</body></html>

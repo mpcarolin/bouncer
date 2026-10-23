@@ -1,6 +1,8 @@
 // §2h: learned rules. After a verified, deterministic refusal on Bouncer's own path, what worked
-// is kept as a local per-site rule: each target control by selector, expected text and label, and
-// each toggle's target state (never a click). The replay is in pipeline/replay.ts.
+// is kept as a local per-site rule: the banner it worked on, each target control by selector,
+// expected text and label, and each toggle's target state (never a click). This file is the
+// format, its validation and its storage, and is loaded by the service worker too; recording
+// selectors is page/selector.ts's, and the replay is pipeline/replay.ts's.
 import type { LogEntry } from "./log.ts";
 import type { KV } from "./platform.ts";
 import type { Label } from "./types.ts";
@@ -19,6 +21,19 @@ export interface LearnedToggle {
 }
 
 /**
+ * Which candidate a rule is for. A selector relative to the banner says nothing about which
+ * banner, so a replay applies only to a candidate whose visible buttons and links, as
+ * `${label}|${normalised text}` with deterministic labels (`other` where the rules leave one to
+ * the AI), sorted, are exactly `controls`, and whose text has cookie or consent wording.
+ * `locator` is a document-anchored selector for the banner, kept when it is anchored at a stable
+ * id, for a later export to autoconsent's `detectPopup`; a replay doesn't require it.
+ */
+export interface LearnedBanner {
+  controls: string[];
+  locator?: string;
+}
+
+/**
  * One site's rule. Stage 1 acts in the banner; stage 2, after a settings click, in the panel that
  * opened. Toggles go with a save, and only with one.
  *
@@ -29,6 +44,7 @@ export interface LearnedToggle {
 export interface LearnedRule {
   site: string;
   createdAt: number;
+  banner: LearnedBanner;
   stage1: { action: "reject" | "settings" | "save"; target: TargetRef; toggles?: LearnedToggle[] };
   stage2?: { action: "reject" | "save"; target: TargetRef; toggles?: LearnedToggle[] };
 }
@@ -38,10 +54,12 @@ export type Stage2 = NonNullable<LearnedRule["stage2"]>;
 export type LearnedStage = Stage1 | Stage2;
 
 /**
- * A flow's stages, each recorded by `recordStage` just before it acted: the page as the next
- * visit will find it, not as Bouncer's own clicks and the site's dismissal left it.
+ * A flow as recorded just before each part of it acted (page/selector.ts's `recordStage`): the
+ * page as the next visit will find it, not as Bouncer's own clicks and the site's dismissal
+ * left it.
  */
 export interface RecordedFlow {
+  banner: LearnedBanner;
   stage1: Stage1;
   stage2?: Stage2;
 }
@@ -63,17 +81,32 @@ export function learnable(
   );
 }
 
-/** The rule for `site` from a flow's recorded stages. */
+/** The rule for `site` from a recorded flow. */
 export function recordRule(site: string, flow: RecordedFlow, now = Date.now()): LearnedRule {
-  return flow.stage2
-    ? { site, createdAt: now, stage1: flow.stage1, stage2: flow.stage2 }
-    : { site, createdAt: now, stage1: flow.stage1 };
+  const { banner, stage1, stage2 } = flow;
+  return stage2
+    ? { site, createdAt: now, banner, stage1, stage2 }
+    : { site, createdAt: now, banner, stage1 };
 }
 
 // --- validation: a stored or received rule is checked before anything trusts it ---
 
 type Loose = Record<string, unknown>;
 const isObject = (x: unknown): x is Loose => typeof x === "object" && x !== null;
+
+const LABELS: Record<Label, true> = {
+  accept: true,
+  reject: true,
+  settings: true,
+  save: true,
+  close: true,
+  acknowledge: true,
+  link: true,
+  "toggle-optional": true,
+  "toggle-optout": true,
+  "toggle-necessary": true,
+  other: true,
+};
 
 function isRef(x: unknown): x is TargetRef {
   return (
@@ -103,10 +136,24 @@ function isStage(x: unknown, actions: readonly string[]): boolean {
   return Array.isArray(toggles) && toggles.length > 0 && toggles.every(isToggle);
 }
 
-/** A well-formed rule: stage 2 exactly when stage 1 opens settings. */
+/** `${label}|${text}` for a known label. */
+function isControlKey(x: unknown): boolean {
+  if (typeof x !== "string") return false;
+  const bar = x.indexOf("|");
+  return bar > 0 && Object.hasOwn(LABELS, x.slice(0, bar));
+}
+
+function isBanner(x: unknown): x is LearnedBanner {
+  if (!isObject(x) || !Array.isArray(x.controls) || x.controls.length === 0) return false;
+  if (!x.controls.every(isControlKey)) return false;
+  return x.locator === undefined || (typeof x.locator === "string" && x.locator !== "");
+}
+
+/** A well-formed rule: a banner fingerprint, and stage 2 exactly when stage 1 opens settings. */
 export function isLearnedRule(x: unknown): x is LearnedRule {
   if (!isObject(x) || typeof x.site !== "string" || x.site === "") return false;
   if (typeof x.createdAt !== "number" || !Number.isFinite(x.createdAt)) return false;
+  if (!isBanner(x.banner)) return false;
   if (!isStage(x.stage1, ["reject", "settings", "save"])) return false;
   const hop = (x.stage1 as Loose).action === "settings";
   return hop ? isStage(x.stage2, ["reject", "save"]) : x.stage2 === undefined;
@@ -114,11 +161,15 @@ export function isLearnedRule(x: unknown): x is LearnedRule {
 
 // --- storage ---
 
-const KEY = "learnedRules";
+const ruleKey = (site: string) => `learnedRule:${site}`;
+/** The sites that have a rule, for `list()`: always a superset of the stored rules. */
+const INDEX_KEY = "learnedRuleSites";
 
 /**
- * The learned rules, one per site, in local storage. Invalid entries are dropped on read.
- * Read-modify-write cycles are serialised, so rules saved from several tabs at once all land.
+ * The learned rules in local storage, one key per site (`learnedRule:<site>`), so `get` (what
+ * `hello` needs) reads one key. Invalid entries are ignored on read. Writes are serialised, and
+ * the site index is written before a rule is stored and after one is removed, so it never misses
+ * a stored rule.
  */
 export class LearnedRules {
   private chain: Promise<unknown> = Promise.resolve();
@@ -131,211 +182,46 @@ export class LearnedRules {
     return run;
   }
 
-  private async load(): Promise<Map<string, LearnedRule>> {
-    const stored = await this.kv.get<unknown>(KEY);
-    const out = new Map<string, LearnedRule>();
-    if (!isObject(stored)) return out;
-    for (const [site, r] of Object.entries(stored)) {
-      if (isLearnedRule(r) && r.site === site) out.set(site, r);
-    }
-    return out;
+  private async sites(): Promise<string[]> {
+    const stored = await this.kv.get<unknown>(INDEX_KEY);
+    return Array.isArray(stored) ? stored.filter((s): s is string => typeof s === "string") : [];
   }
 
-  private save(all: Map<string, LearnedRule>): Promise<void> {
-    return this.kv.set(KEY, Object.fromEntries(all));
-  }
-
-  get(site: string): Promise<LearnedRule | undefined> {
-    return this.serial(async () => (await this.load()).get(site));
+  async get(site: string): Promise<LearnedRule | undefined> {
+    const r = await this.kv.get<unknown>(ruleKey(site));
+    return isLearnedRule(r) && r.site === site ? r : undefined;
   }
 
   /** Replaces the site's rule. Throws for a rule that is not well-formed. */
   put(r: LearnedRule): Promise<void> {
     return this.serial(async () => {
       if (!isLearnedRule(r)) throw new TypeError("not a well-formed learned rule");
-      const all = await this.load();
-      all.set(r.site, r);
-      await this.save(all);
+      const sites = await this.sites();
+      if (!sites.includes(r.site)) await this.kv.set(INDEX_KEY, [...sites, r.site]);
+      await this.kv.set(ruleKey(r.site), r);
     });
   }
 
   remove(site: string): Promise<void> {
     return this.serial(async () => {
-      const all = await this.load();
-      if (all.delete(site)) await this.save(all);
+      await this.kv.remove(ruleKey(site));
+      const sites = await this.sites();
+      if (sites.includes(site))
+        await this.kv.set(
+          INDEX_KEY,
+          sites.filter((s) => s !== site),
+        );
     });
   }
 
   list(): Promise<LearnedRule[]> {
-    return this.serial(async () => [...(await this.load()).values()]);
-  }
-}
-
-// --- selectors (DOM) ---
-
-/** Steps into an open shadow root: the next segment is resolved in the shadow root found. */
-const SHADOW = " >>> ";
-const CHILD = " > ";
-const SCOPE = ":scope";
-/** The attributes, besides `data-*`, kept in a path step. */
-const NAMED_ATTRS = new Set(["aria-label", "name", "role", "type"]);
-const MAX_ATTR_CHARS = 100;
-
-/**
- * An id or attribute value a framework or build generated, which may differ on the next visit:
- * digits first or a long run of them, React's `:r1:`, a hash, a random token, and a few
- * frameworks' counters.
- */
-export function looksGenerated(v: string): boolean {
-  if (/^\d|\d{5,}|:/.test(v)) return true;
-  if (/^(?:ember\d|headlessui-|radix-|react-aria|mui-\d)/i.test(v)) return true;
-  if ((v.match(/[0-9a-f]{8,}/gi) ?? []).some((run) => /\d/.test(run))) return true;
-  return v.split(/[-_]/).some((t) => t.length >= 10 && /\d.*\d/.test(t) && /[a-z]/i.test(t));
-}
-
-/** `#id` when the element's id is stable and unique in its own tree (document or shadow root). */
-function stableId(el: Element): string | undefined {
-  const id = el.id;
-  if (!id || looksGenerated(id)) return undefined;
-  const sel = `#${CSS.escape(id)}`;
-  const scope = el.getRootNode() as ParentNode;
-  return scope.querySelectorAll(sel).length === 1 ? sel : undefined;
-}
-
-function attrsOf(el: Element): string {
-  return [...el.attributes]
-    .filter((a) => {
-      if (a.value.length > MAX_ATTR_CHARS) return false;
-      if (NAMED_ATTRS.has(a.name)) return true;
-      return (
-        a.name.startsWith("data-") && !a.name.startsWith("data-bouncer") && !looksGenerated(a.value)
-      );
-    })
-    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
-    .map((a) => `[${CSS.escape(a.name)}="${CSS.escape(a.value)}"]`)
-    .join("");
-}
-
-/** Tag, stable attributes and `:nth-of-type` among the element's siblings. */
-function stepFor(el: Element): string {
-  let n = 1;
-  for (let s = el.previousElementSibling; s; s = s.previousElementSibling) {
-    if (s.localName === el.localName) n++;
-  }
-  return `${CSS.escape(el.localName)}${attrsOf(el)}:nth-of-type(${n})`;
-}
-
-/**
- * A stable selector for `el` relative to `root`: `#id` when the id is stable and unique in its
- * tree, else a child path from `root` (`:scope > tag[attrs]:nth-of-type(n) > …`), anchored at
- * the nearest ancestor with such an id. ` >>> ` steps into an open shadow root. Without a shadow
- * root in the way it is plain CSS for `root.querySelectorAll`. Throws if `el` is not under `root`.
- */
-export function selectorFor(el: Element, root: Element): string {
-  const segments: string[] = [];
-  let steps: string[] = [];
-  let n = el;
-  for (;;) {
-    if (n === root) {
-      segments.unshift([SCOPE, ...steps].join(CHILD));
-      break;
-    }
-    const id = stableId(n);
-    if (id) {
-      segments.unshift([id, ...steps].join(CHILD));
-      steps = [];
-      const tree = n.getRootNode();
-      if (tree === root.getRootNode()) break; // the id anchors in root's own tree
-      if (!(tree instanceof ShadowRoot)) throw new Error("selectorFor: not under the root");
-      n = tree.host;
-      continue;
-    }
-    steps.unshift(stepFor(n));
-    if (n.parentElement) {
-      n = n.parentElement;
-      continue;
-    }
-    const parent = n.parentNode;
-    if (!(parent instanceof ShadowRoot)) throw new Error("selectorFor: not under the root");
-    segments.unshift(steps.join(CHILD));
-    steps = [];
-    n = parent.host;
-  }
-  return segments.join(SHADOW);
-}
-
-const childrenOf = (scope: ParentNode) => [...scope.children];
-
-/** Resolves one segment in `scope`: the root itself (`:scope`), an `#id` below it, or its children. */
-function resolveSegment(scope: ParentNode, segment: string, root: Element | null): Element[] {
-  const [first, ...rest] = segment.split(CHILD);
-  if (first === undefined) return [];
-  let found: Element[];
-  if (first === SCOPE) found = root ? [root] : [];
-  else if (first.startsWith("#")) found = [...scope.querySelectorAll(first)];
-  else found = childrenOf(scope).filter((c) => c.matches(first));
-  for (const step of rest)
-    found = found.flatMap((f) => childrenOf(f).filter((c) => c.matches(step)));
-  return found;
-}
-
-/**
- * The elements `selector` (from `selectorFor`) names under `root`, in order. A selector that
- * crosses into a missing shadow root, or is malformed, finds nothing.
- */
-export function resolveSelector(root: Element, selector: string): Element[] {
-  try {
-    let scope: ParentNode = root;
-    let found: Element[] = [];
-    const segments = selector.split(SHADOW);
-    for (let i = 0; i < segments.length; i++) {
-      if (i > 0) {
-        const host = found.length === 1 ? found[0] : undefined;
-        if (!host?.shadowRoot) return [];
-        scope = host.shadowRoot;
+    return this.serial(async () => {
+      const out: LearnedRule[] = [];
+      for (const site of await this.sites()) {
+        const r = await this.get(site);
+        if (r) out.push(r);
       }
-      found = resolveSegment(scope, segments[i] as string, i === 0 ? root : null);
-    }
-    return found;
-  } catch {
-    return [];
-  }
-}
-
-/** A control as the flow found it, just before acting. */
-export interface Seen {
-  el: Element;
-  text: string;
-}
-
-/**
- * One stage, recorded just before it acts, while the page is as a fresh visit will find it.
- * `toggles` are every toggle-optional and toggle-optout in `root`, with their target states.
- * Every selector must resolve back to its own element, or nothing is recorded (undefined).
- */
-export function recordStage<A extends LearnedStage["action"]>(
-  root: Element,
-  action: A,
-  target: Seen,
-  toggles: readonly (Seen & { label: Label; to: boolean })[] = [],
-): { action: A; target: TargetRef; toggles?: LearnedToggle[] } | undefined {
-  try {
-    const ref = (el: Element, text: string, label: Label): TargetRef | undefined => {
-      const selector = selectorFor(el, root);
-      const back = resolveSelector(root, selector);
-      return back.length === 1 && back[0] === el ? { selector, text, label } : undefined;
-    };
-    const t = ref(target.el, target.text, action);
-    if (!t) return undefined;
-    if (toggles.length === 0) return { action, target: t };
-    const refs: LearnedToggle[] = [];
-    for (const x of toggles) {
-      const r = ref(x.el, x.text, x.label);
-      if (!r) return undefined;
-      refs.push({ ref: r, to: x.to });
-    }
-    return { action, target: t, toggles: refs };
-  } catch {
-    return undefined;
+      return out;
+    });
   }
 }
