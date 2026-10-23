@@ -16,7 +16,7 @@ import { textOf } from "../page/dom.ts";
 import type { Hider } from "../page/hide.ts";
 import { findPanel, snapshotRendered } from "../page/panel.ts";
 import { type Serialised, serialise } from "../page/serialise.ts";
-import { recheck, setToggles, type ToggleTarget } from "../page/toggles.ts";
+import { readToggle, recheck, setToggles, type ToggleTarget } from "../page/toggles.ts";
 import type { Control, Decision, Label, SerialisedBanner } from "../types.ts";
 import { stillSame } from "./page-checks.ts";
 
@@ -25,13 +25,20 @@ export type SaveDecision = Extract<Decision, { kind: "save" }>;
 /** Why a save could not go ahead: a toggle click's own reason, or the §2f.2 re-read. */
 export type SaveFailure = "recheck_failed" | NonNullable<ClickResult["reason"]>;
 
+export interface SaveApplied {
+  /** `ok`: the re-read passed, so save may be clicked. */
+  result: "ok" | SaveFailure;
+  /** The toggles the switching actually changed, each with the state it is in now. */
+  switched: { id: number; to: boolean }[];
+}
+
 type Done = { ok: true } | { ok: false; reason: string };
 
 /** What the own path does for each click and toggle of a flow, so that every one is logged. */
 export interface Actions {
   /** Clicks `el` through `safeClick` with a fresh `NavigationWatch`, and records the click. */
   click(el: Element, control: Control, aiOnly: boolean): ClickResult;
-  /** Records the toggles about to be switched. */
+  /** Records the toggles the flow changed. */
   toggled(t: { text: string; to: boolean }[]): void;
 }
 
@@ -49,18 +56,27 @@ function wantedStates(s: Serialised): ToggleTarget[] {
 }
 
 /**
- * §2f.2 steps 1–2: switch `d.toggles`, then re-read every toggle `s` exposes, hidden ones
- * included, not only the switched ones. `ok` means every toggle-optional is off and every
- * toggle-optout on, so save may be clicked; save itself is not clicked here.
+ * §2f.2 steps 1–2 in `container`, which `s` serialises: switch `d.toggles`, then re-read every
+ * toggle it exposes, hidden ones included, not only the switched ones. The switching may have run
+ * site code, so the container is serialised again and its toggles read too: one the site added
+ * on the way (a sub-choice it reveals, already on) fails the re-read like any other. `ok` means
+ * every toggle-optional is off and every toggle-optout on, so save may be clicked; save itself
+ * is not clicked here.
  */
-export function applySave(d: SaveDecision, s: Serialised): "ok" | SaveFailure {
+export function applySave(d: SaveDecision, s: Serialised, container: Element): SaveApplied {
   const targets = d.toggles.flatMap(({ id, to }) => {
     const el = s.elements.get(id);
-    return el ? [{ el, to }] : []; // every id was decided from `s`
+    return el ? [{ id, el, to, was: readToggle(el) }] : []; // every id was decided from `s`
   });
   const set = setToggles(targets);
-  if (!set.ok) return set.reason;
-  return recheck(wantedStates(s)) ? "ok" : "recheck_failed";
+  const switched = targets.flatMap(({ id, el, was }) => {
+    const now = readToggle(el);
+    return now !== null && now !== was ? [{ id, to: now }] : [];
+  });
+  if (!set.ok) return { result: set.reason, switched };
+  const again = serialise({ el: container }, clickability, { hiddenToggles: true });
+  const ok = recheck(wantedStates(s)) && recheck(wantedStates(again));
+  return { result: ok ? "ok" : "recheck_failed", switched };
 }
 
 /**
@@ -95,7 +111,8 @@ function clickTarget(
 
 /**
  * §2f.2 in `container`: switch the toggles, re-read them all, and click save only if the re-read
- * passed and the save control still reads as it did. The toggles may have run site code.
+ * passed and the save control still reads as it did. The toggles may have run site code. What
+ * the switching changed is logged whether or not save follows.
  */
 export function saveWithToggles(
   d: SaveDecision,
@@ -104,14 +121,14 @@ export function saveWithToggles(
   aiOnly: boolean,
   act: Actions,
 ): Done {
+  const { result, switched } = applySave(d, s, container);
   act.toggled(
-    d.toggles.map(({ id, to }) => ({
+    switched.map(({ id, to }) => ({
       text: s.banner.controls.find((c) => c.id === id)?.text ?? "",
       to,
     })),
   );
-  const applied = applySave(d, s);
-  if (applied !== "ok") return { ok: false, reason: applied };
+  if (result !== "ok") return { ok: false, reason: result };
   return clickTarget(s, d.target, container, aiOnly, act);
 }
 

@@ -1,6 +1,6 @@
 import type { AbsentReason, Control, Role, SerialisedBanner } from "../types.ts";
 import type { Candidate } from "./detect.ts";
-import { collapse, deepAll, isVisible, textOf } from "./dom.ts";
+import { collapse, deepAll, isVisible, labelText, textOf } from "./dom.ts";
 
 export { isVisible };
 
@@ -72,29 +72,31 @@ export function isVisibleControl(el: Element): boolean {
   return el.parentElement !== null && isVisible(el.parentElement);
 }
 
+/** The referenced elements may be hidden themselves; what they hide inside is left out. */
 function ariaLabelledBy(el: Element): string {
   const ids = el.getAttribute("aria-labelledby");
   if (!ids) return "";
   const root = el.getRootNode() as Document | ShadowRoot;
-  return ids
-    .split(/\s+/)
-    .map((id) => root.getElementById(id)?.textContent ?? "")
-    .join(" ");
+  const texts = ids.split(/\s+/).map((id) => {
+    const ref = root.getElementById(id);
+    return ref ? labelText(ref) : "";
+  });
+  return collapse(texts.join(" "));
 }
 
 /**
  * A control's text as the user sees it. A toggle the user cannot see has no rendered text, so
- * its labels' text is read whether or not they are rendered.
+ * its labels are read whether or not they are rendered, without what the labels themselves hide.
  */
 function visibleText(el: Element, shown: boolean): string {
   if (el instanceof HTMLInputElement && (el.type === "button" || el.type === "submit")) {
     return el.value;
   }
   if (isToggle(el)) {
-    const read = shown ? textOf : (n: Element) => n.textContent ?? "";
+    const read = shown ? textOf : labelText;
     const labels = (el as HTMLInputElement).labels;
     const fromLabels = labels ? [...labels].map(read).join(" ") : "";
-    return collapse(fromLabels) || collapse(ariaLabelledBy(el)) || collapse(read(el));
+    return collapse(fromLabels) || ariaLabelledBy(el) || read(el);
   }
   return textOf(el);
 }

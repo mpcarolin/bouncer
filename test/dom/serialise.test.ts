@@ -129,6 +129,30 @@ describe("serialise", () => {
     expect(full.banner.text).toBe(banner.text);
   });
 
+  it("hiddenToggles: a hidden toggle's label text leaves out what the label itself hides", () => {
+    const { elements } = ser(`We use cookies. <button>Save</button>
+      <details><summary>More</summary>
+        <label><input type="checkbox" id="a" checked> Analytics <span hidden>You can opt out</span>
+          <span style="display:none">Always on</span> <span aria-hidden="true">strictly</span>
+          <span style="visibility:hidden">opt out</span> <span style="opacity:0">required</span>
+          <script>/* opt out */</script><style>.x{}</style><template>opt out</template>
+          <span><b>for</b> stats</span></label>
+      </details>
+      <div style="visibility:hidden"><label><input type="checkbox" id="b"> Ads <i>partners</i></label></div>
+      <div hidden><input type="checkbox" id="c" aria-labelledby="c-l">
+        <span id="c-l">Social <span hidden>Do not sell</span>media</span></div>`);
+    const full = serialise({ el: elements.get(0)?.closest("#b") as Element }, none, {
+      hiddenToggles: true,
+    });
+    expect(full.banner.controls.map((c) => [c.text, c.hidden])).toEqual([
+      ["Save", undefined],
+      ["Analytics for stats", true],
+      // A tab hidden as a whole still has its labels read: only what the label hides is left out.
+      ["Ads partners", true],
+      ["Social media", true],
+    ]);
+  });
+
   it("serialises controls inside a shadow root", () => {
     const box = mount("<div id='host'></div>");
     const root = box.querySelector("#host")?.attachShadow({ mode: "open" }) as ShadowRoot;

@@ -32,6 +32,9 @@ describe("save with toggles and the settings hop", () => {
     mountPage("custom-settings");
     const bar = byId("cookie-bar");
     const prefs = byId("cookie-prefs");
+    const save = prefs.querySelector("button") as HTMLButtonElement;
+    let hiddenAtSave: boolean | undefined;
+    save.addEventListener("click", () => (hiddenAtSave = prefs.hasAttribute(HIDDEN)), true);
     const h = await start();
     document.body.style.overflow = "hidden"; // the banner locks scroll until consent
 
@@ -54,6 +57,7 @@ describe("save with toggles and the settings hop", () => {
     expect(e.notes).toContain("scroll:unlocked");
     expect(document.body.style.overflow).toBe("");
     expect(h.hidden).toEqual([bar, prefs]); // the panel is hidden the same way as the banner
+    expect(hiddenAtSave).toBe(true); // and already hidden when its save is clicked
     expect(bar.hasAttribute(HIDDEN) || prefs.hasAttribute(HIDDEN)).toBe(false);
     expect(document.querySelector("style[data-bouncer]")).toBeNull();
     expect(checked("c-nec")).toBe(true); // necessary is never touched
@@ -125,15 +129,53 @@ describe("save with toggles and the settings hop", () => {
       outcome: "failed",
       reason: "recheck_failed",
       clicked: [{ text: "Cookie settings" }],
-      toggles: [
-        { text: "Analytics cookies", to: false },
-        { text: "Marketing cookies", to: false },
-      ],
     });
+    // The log says what changed: the site undid Analytics, so only Marketing is listed.
+    expect(e.toggles).toEqual([{ text: "Marketing cookies", to: false }]);
     expect(checked("re-ana")).toBe(true);
     expect(checked("re-mkt")).toBe(false);
     expect(window.__clicked).toBeUndefined();
     expect(h.clicks).not.toContain(save);
+  });
+
+  test("switching a toggle off reveals another that is on → recheck_failed, save not clicked", async () => {
+    mountPage("settings-reveal");
+    const save = byId("rv-save");
+    const h = await start();
+
+    const e = await h.path.done;
+    expect(e).toMatchObject({
+      outcome: "failed",
+      reason: "recheck_failed",
+      clicked: [{ text: "Cookie settings" }],
+      toggles: [{ text: "Analytics cookies", to: false }],
+    });
+    expect(checked("rv-partners")).toBe(true); // revealed after the serialisation, and still on
+    expect(window.__clicked).toBeUndefined();
+    expect(h.clicks).not.toContain(save);
+  });
+
+  test('a panel with toggles and only "×" (closeAction click) → failed, nothing in it clicked', async () => {
+    mountPage("settings-no-refusal");
+    const panel = byId("cookie-panel");
+    for (const b of panel.querySelectorAll("button")) b.remove();
+    panel.insertAdjacentHTML(
+      "beforeend",
+      `<button aria-label="Close" onclick="window.__clicked='close'; this.parentElement.remove()">×</button>`,
+    );
+    const h = await start({ settings: { closeAction: "click" } });
+
+    const e = await h.path.done;
+    expect(e).toMatchObject({
+      outcome: "failed",
+      reason: "panel_no_refusal",
+      clicked: [{ text: "Manage cookies" }],
+      toggles: [],
+    });
+    expect(e.notes).toContain("stage2:close");
+    expect(window.__clicked).toBeUndefined();
+    expect(h.clicks.every((el) => !panel.contains(el))).toBe(true);
+    expect(checked("np-ana")).toBe(true);
   });
 
   test('the panel offers only "Save & accept all" → failed, never clicked, no toggle touched', async () => {
@@ -234,18 +276,22 @@ describe("save with toggles and the settings hop", () => {
     expect(h.hidden).toEqual([bar]);
   });
 
-  test("optional toggles in a collapsed <details> and a hidden tab are switched off before save", async () => {
+  test("toggles in a collapsed <details> and a hidden tab are set before save; hidden label text doesn't count", async () => {
     mountPage("settings-details");
     const h = await start();
 
     const e = await h.path.done;
-    expect(window.__consent).toBe("ana=false,ads=false,social=false,nec=true");
+    // "Personalised advertising" hides an "opt out" tooltip and "Preferences" an "Always on"
+    // note: both stay optional and go off. "Do not sell my data", collapsed, goes on.
+    expect(window.__consent).toBe("ana=false,ads=false,pref=false,social=false,dns=true,nec=true");
     expect(e).toMatchObject({
       outcome: "dismissed",
       clicked: [{ text: "Cookie settings" }, { text: "Save choices" }],
       toggles: [
         { text: "Analytics cookies", to: false },
         { text: "Personalised advertising", to: false },
+        { text: "Preferences", to: false },
+        { text: "Do not sell my data", to: true },
         { text: "Social media cookies", to: false },
       ],
     });
@@ -274,24 +320,26 @@ describe("save with toggles and the settings hop", () => {
 describe("applySave", () => {
   const panel = (html: string) => {
     const box = mount(`<div>Cookie choices ${html}<button>Save choices</button></div>`);
-    return serialise({ el: box.firstElementChild as Element }, clickability, {
-      hiddenToggles: true,
-    });
+    const el = box.firstElementChild as Element;
+    return { el, s: serialise({ el }, clickability, { hiddenToggles: true }) };
   };
 
   test("re-reads every toggle the panel exposes, not only the ones it switched", () => {
-    const s = panel(`<label><input type=checkbox id=a checked> Analytics</label>
+    const { el, s } = panel(`<label><input type=checkbox id=a checked> Analytics</label>
       <label><input type=checkbox id=b checked> Ads</label>`);
     // A decision that switches only Analytics leaves Ads on: the re-read fails it.
-    expect(applySave({ kind: "save", target: 2, toggles: [{ id: 0, to: false }] }, s)).toBe(
-      "recheck_failed",
-    );
+    expect(applySave({ kind: "save", target: 2, toggles: [{ id: 0, to: false }] }, s, el)).toEqual({
+      result: "recheck_failed",
+      switched: [{ id: 0, to: false }],
+    });
     expect(checked("a")).toBe(false);
-    expect(applySave({ kind: "save", target: 2, toggles: [{ id: 1, to: false }] }, s)).toBe("ok");
+    expect(
+      applySave({ kind: "save", target: 2, toggles: [{ id: 1, to: false }] }, s, el).result,
+    ).toBe("ok");
   });
 
   test("a toggle click that navigates stops there, with its reason", () => {
-    const s =
+    const { el, s } =
       panel(`<label><input type=checkbox id=a checked onclick="location.hash = 'moved'"> Analytics</label>
       <label><input type=checkbox id=b checked> Ads</label>`);
     const d = {
@@ -302,7 +350,7 @@ describe("applySave", () => {
         { id: 1, to: false },
       ],
     };
-    expect(applySave(d, s)).toBe("navigation");
+    expect(applySave(d, s, el)).toEqual({ result: "navigation", switched: [{ id: 0, to: false }] });
     expect(checked("b")).toBe(true); // nothing more is clicked after a navigation
   });
 });
