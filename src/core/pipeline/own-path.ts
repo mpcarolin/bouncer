@@ -23,7 +23,7 @@ import { isVisible } from "../page/dom.ts";
 import { Hider } from "../page/hide.ts";
 import { ScrollTracker } from "../page/scroll.ts";
 import { type Serialised, serialise, shownOnly } from "../page/serialise.ts";
-import { isGoneBySite, verifyDismissed } from "../page/verify.ts";
+import { autoconsentHides, isGoneBySite, verifyDismissed } from "../page/verify.ts";
 import type { ContentPlatform } from "../platform.ts";
 import { type Settings, siteOf } from "../settings.ts";
 import type {
@@ -109,6 +109,11 @@ interface Run {
   replayed?: true;
   /** The learned rule's stage-1 check failed on this candidate, for this reason. */
   mismatch?: string;
+  /**
+   * autoconsent's prehide came down on the candidate before anything was touched: the run ends
+   * unlogged, with no outcome, and the candidate is looked at again once it shows (`handle`).
+   */
+  aside?: true;
 }
 
 const realClock: Clock = {
@@ -333,8 +338,11 @@ export class OwnPath {
   }
 
   private async handle(c: Candidate, found: number): Promise<void> {
-    // Gone before its turn (or hidden by autoconsent's prehide): nothing to decide.
-    if (!c.el.isConnected || !isVisible(c.el)) return;
+    // Gone before its turn: nothing to decide. Hidden by autoconsent's prehide, it is set aside.
+    if (!c.el.isConnected || !isVisible(c.el)) {
+      if (c.el.isConnected && autoconsentHides(c.el)) this.watcher?.retry(c);
+      return;
+    }
     const url = this.d.win.location.href;
     const r: Run = {
       c,
@@ -359,6 +367,10 @@ export class OwnPath {
       r.entry.notes.push(`exception:${message(e)}`);
       end = { outcome: r.acted ? "failed" : "unsure", reason: "exception" };
     }
+    if (r.aside) {
+      this.watcher?.retry(c);
+      return;
+    }
     await this.finish(r, end);
   }
 
@@ -374,6 +386,14 @@ export class OwnPath {
       await waited;
       if (this.stopped) return { outcome: "deferred", reason: "stopped" };
       if (this.acDetected) return { outcome: "deferred", reason: "autoconsent_detected" };
+      // autoconsent's prehide came down on the banner during the wait (its first look at the page
+      // came after Bouncer's). The hiding is autoconsent's, not a change of the site's (§2g), and
+      // it lifts once autoconsent has looked: nothing is decided now. This ending stops the run
+      // and is never logged; `handle` sets the candidate aside.
+      if (autoconsentHides(r.c.el)) {
+        r.aside = true;
+        return { outcome: "unsure", reason: "autoconsent_prehide" };
+      }
       return undefined;
     };
 

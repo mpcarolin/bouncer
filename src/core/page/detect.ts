@@ -168,6 +168,11 @@ export class CandidateWatcher {
     this.rejected.add(c.el);
   }
 
+  /** Report this element with this text again, on a pass after it shows: it was set aside unjudged. */
+  retry(c: Candidate): void {
+    this.seen.get(c.el)?.delete(c.key);
+  }
+
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;

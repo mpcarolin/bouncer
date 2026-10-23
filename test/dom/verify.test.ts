@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { NavigationWatch } from "../../src/core/page/click.ts";
 import {
+  autoconsentHides,
   autoconsentStyleTouches,
   isGoneBySite,
   verifyDismissed,
@@ -66,14 +67,15 @@ describe("isGoneBySite", () => {
   });
 });
 
+const inject = (root: ParentNode, id: string, css: string) => {
+  const s = document.createElement("style");
+  s.id = id;
+  s.textContent = css;
+  (root instanceof Document ? document.head : root).append(s);
+  return s;
+};
+
 describe("autoconsentStyleTouches", () => {
-  const inject = (root: ParentNode, id: string, css: string) => {
-    const s = document.createElement("style");
-    s.id = id;
-    s.textContent = css;
-    (root instanceof Document ? document.head : root).append(s);
-    return s;
-  };
   test("matches by selector, in either autoconsent style", () => {
     const b = mk();
     expect(autoconsentStyleTouches(b)).toBe(false);
@@ -108,6 +110,44 @@ describe("autoconsentStyleTouches", () => {
     const s = inject(document, "something-else", "#b{display:none}");
     expect(autoconsentStyleTouches(b)).toBe(false);
     s.remove();
+  });
+});
+
+describe("autoconsentHides", () => {
+  const banner = () =>
+    mount(
+      `<div id=wrap><div id=b class=banner>cookies <span id=inner>x</span></div></div><div id=sib>y</div>`,
+    ).querySelector("#b") as HTMLElement;
+  const prehide = (sel: string) => inject(document, "autoconsent-prehide", `${sel}{opacity:0}`);
+
+  test("when autoconsent's styles match the element, one it sits in, or one inside it", () => {
+    const b = banner();
+    expect(autoconsentHides(b)).toBe(false);
+    for (const sel of ["#b", "#wrap", "#inner"]) {
+      const s = prehide(sel);
+      expect(autoconsentHides(b), sel).toBe(true);
+      s.remove();
+    }
+  });
+
+  test("not when they match only something beside it, or come from another style", () => {
+    const b = banner();
+    const s = prehide("#sib");
+    expect(autoconsentHides(b)).toBe(false);
+    s.remove();
+    const other = inject(document, "something-else", "#b{opacity:0}");
+    expect(autoconsentHides(b)).toBe(false);
+    other.remove();
+  });
+
+  test("across a shadow root: the host it sits in counts", () => {
+    const host = mount("<div id=h></div>").querySelector("#h") as HTMLElement;
+    const sr = host.attachShadow({ mode: "open" });
+    sr.innerHTML = "<div id=b>cookies</div>";
+    const b = sr.querySelector("#b") as Element;
+    expect(autoconsentHides(b)).toBe(false);
+    prehide("#h");
+    expect(autoconsentHides(b)).toBe(true);
   });
 });
 

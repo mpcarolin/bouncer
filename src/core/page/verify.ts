@@ -2,7 +2,7 @@
 // (clip-path, pointer-events) is deliberately not one of the tests here.
 import { VERIFY_GONE_MS, VERIFY_STAY_MS } from "../config.ts";
 import type { NavigationWatch } from "./click.ts";
-import { parentOf } from "./dom.ts";
+import { deepAll, parentOf } from "./dom.ts";
 
 const POLL_MS = 100;
 const MIN_GAP_MS = 50;
@@ -45,6 +45,16 @@ function ruleMatches(rules: CSSRuleList, el: Element): boolean {
     if (nested && ruleMatches(nested, el)) return true;
   }
   return false;
+}
+
+/**
+ * True when autoconsent's styles hide some of `el`: they match it, an element it sits in (shadow
+ * hosts included), or one inside it. Its prehide does this, until it has looked for a CMP, to any
+ * banner its generic rules name: hiding that is autoconsent's, not the site's (§2g).
+ */
+export function autoconsentHides(el: Element): boolean {
+  for (let n: Element | null = el; n; n = parentOf(n)) if (autoconsentStyleTouches(n)) return true;
+  return deepAll(el, "*").some(autoconsentStyleTouches);
 }
 
 /** True when autoconsent's prehide or CSS-rules style, in the element's own root or the document, matches it. */

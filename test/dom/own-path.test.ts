@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { MockProvider } from "../../src/ai/mock/provider.ts";
 import type { AiProvider, AiResult } from "../../src/core/ai.ts";
+import { CLAIM_WAIT_MS } from "../../src/core/config.ts";
 import type { ContentPlatform } from "../../src/core/platform.ts";
+import type { Clock } from "../../src/core/types.ts";
 import type { FakeBackground } from "../helpers/fake-platform.ts";
 import { mount, mountPage, unmountAll } from "../helpers/mount.ts";
 import {
@@ -9,6 +11,7 @@ import {
   byId,
   Counting,
   cleanup,
+  fastClock,
   HIDDEN,
   sleep,
   start,
@@ -18,6 +21,35 @@ import {
 } from "../helpers/pipeline.ts";
 
 afterEach(cleanup);
+
+/**
+ * Lays autoconsent's prehide (`style#autoconsent-prehide`) over `selector`, as its generic rules
+ * do to a home-grown banner until it has looked for a CMP, and returns what lifts it (its prehide
+ * timeout, or the end of its detection).
+ */
+function prehide(selector: string): () => void {
+  const style = document.createElement("style");
+  style.id = "autoconsent-prehide";
+  style.textContent = `${selector} { opacity: 0 !important; z-index: -1 !important; pointer-events: none !important; }`;
+  document.head.append(style);
+  return () => style.remove();
+}
+
+/** `fastClock`, except that autoconsent's prehide lands on `selector` as the first claim wait ends. */
+function prehideAtClaimWait(selector: string): Clock {
+  let landed = false;
+  return {
+    ...fastClock,
+    setTimeout: (fn, ms) => {
+      if (ms !== CLAIM_WAIT_MS || landed) return fastClock.setTimeout(fn, ms);
+      landed = true;
+      return fastClock.setTimeout(() => {
+        setTimeout(prehide(selector), 100);
+        fn();
+      }, ms);
+    },
+  };
+}
 
 describe("OwnPath, stage 1", () => {
   test("custom reject: gate yes → reject clicked → dismissed, hidden attr removed after", async () => {
@@ -469,6 +501,50 @@ describe("OwnPath, stage 1", () => {
     document.body.style.overflow = "hidden";
     await tell({ type: "acOutcome", outcome: "dismissed_late" });
     expect(document.body.style.overflow).toBe("hidden");
+  });
+
+  test("autoconsent's prehide lands on the banner during the claim wait: nothing touched, nothing logged, and the banner is refused once it lifts", async () => {
+    mountPage("custom-reject");
+    const h = await start({ clock: prehideAtClaimWait("#my-cookie-notice") });
+
+    const e = await h.path.done;
+    expect(e).toMatchObject({
+      outcome: "dismissed",
+      path: "ai",
+      verification: "verified",
+      clicked: [{ text: "Reject all", aiOnly: false }],
+    });
+    expect(window.__clicked).toBe("reject");
+    // The banner was looked at again once shown: gated a second time, and logged once.
+    expect(h.provider.calls.filter((op) => op === "isConsentDialog")).toHaveLength(2);
+    expect(await h.entries()).toEqual([e]);
+    expect(h.clicks).toHaveLength(1);
+  });
+
+  test("autoconsent's prehide on a banner waiting its turn: it is handled once the prehide lifts", async () => {
+    mountPage("login-wall");
+    mountPage("custom-reject");
+    const provider = new Counting();
+    let lift: (() => void) | undefined;
+    // The login wall is judged first; meanwhile autoconsent prehides the banner queued after it.
+    provider.onCall = (op) => {
+      if (op === "isConsentDialog" && !lift) lift = prehide("#my-cookie-notice");
+    };
+    // The prehide lifts once the login wall is logged: in a later task than the banner's turn,
+    // which comes straight after.
+    const platform = (content: ContentPlatform): ContentPlatform => ({
+      onMessage: (fn) => content.onMessage(fn),
+      send: (async (m) => {
+        const reply = await content.send(m);
+        if (m.type === "log" && m.entry.outcome === "not_consent") setTimeout(() => lift?.(), 0);
+        return reply;
+      }) as ContentPlatform["send"],
+    });
+    const h = await start({ provider, platform });
+
+    await until(async () => (await h.entries()).some((e) => e.outcome === "dismissed"), 2000);
+    expect((await h.entries()).map((e) => e.outcome)).toEqual(["not_consent", "dismissed"]);
+    expect(window.__clicked).toBe("reject");
   });
 
   test("a dismissal restores the scroll the banner locked", async () => {

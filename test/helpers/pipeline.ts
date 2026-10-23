@@ -135,6 +135,8 @@ export function cleanup(): void {
   stopAll();
   unmountAll();
   for (const s of document.querySelectorAll("style[data-bouncer]")) s.remove();
+  // A test's stand-in for autoconsent's prehide, if its own timer hasn't lifted it yet.
+  for (const s of document.querySelectorAll("style#autoconsent-prehide")) s.remove();
   delete window.__clicked;
   delete window.__chatClicked;
   document.body.style.removeProperty("overflow");
