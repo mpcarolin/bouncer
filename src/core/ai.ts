@@ -1,7 +1,5 @@
 import type { Control, Label, SerialisedBanner } from "./types.ts";
 
-// Types only for now; Task 9 adds the proxy, budget and mock to this file.
-
 export interface AiMeta {
   ms: number;
   cold: boolean;
