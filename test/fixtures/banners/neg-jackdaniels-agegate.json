@@ -1,0 +1,105 @@
+{
+  "id": "neg-jackdaniels-agegate",
+  "kind": "negative",
+  "stage": 1,
+  "note": "Age gate (birthdate + country); links to privacy/cookie policy.",
+  "gate": "other",
+  "banner": {
+    "text": "Jack Daniel's. Live Freely. Drink Responsibly. USA JACK'S BIRTHDATE HAS ALWAYS BEEN A MYSTERY. HOPEFULLY YOURS ISN'T. terms of use privacy policy ENTER EMBRACE THE MOMENT. ENJOY RESPONSIBLY. Terms of Use Privacy Policy Cookie Policy US Product Info Sustainability Contact Us FAQs Nutrition Pressroom Accessibility Jack Daniel Distillery, Lynchburg, Tennessee JACK, JACK DANIEL'S, OLD NO. 7, JD, GENTLEMAN JACK, JACK HONEY, JACK FIRE, and COUNTRY COCKTAILS are registered trademarks of Jack Daniel's Properties, Inc. ©2026. All rights reserved. Please do not share or forward with anyone under the legal drinking age. Do Not Sell or Share My Data Responsibility.org Our Thinking About Drinking All ot…",
+    "controls": [
+      {
+        "id": 0,
+        "role": "button",
+        "text": "Country",
+        "domId": "react-aria55832906-:r3:"
+      },
+      {
+        "id": 1,
+        "role": "other",
+        "text": "AFGHANISTAN ALBANIA ALGERIA ANDORRA ANGOLA ANGUILLA ANTIGUA…"
+      },
+      {
+        "id": 2,
+        "role": "link",
+        "text": "terms of use"
+      },
+      {
+        "id": 3,
+        "role": "link",
+        "text": "privacy policy"
+      },
+      {
+        "id": 4,
+        "role": "button",
+        "text": "ENTER",
+        "domId": "react-aria55832906-:ru:"
+      },
+      {
+        "id": 5,
+        "role": "link",
+        "text": "Terms of Use"
+      },
+      {
+        "id": 6,
+        "role": "link",
+        "text": "Privacy Policy"
+      },
+      {
+        "id": 7,
+        "role": "link",
+        "text": "Cookie Policy"
+      },
+      {
+        "id": 8,
+        "role": "link",
+        "text": "US Product Info"
+      },
+      {
+        "id": 9,
+        "role": "link",
+        "text": "Sustainability"
+      },
+      {
+        "id": 10,
+        "role": "link",
+        "text": "Contact Us"
+      },
+      {
+        "id": 11,
+        "role": "link",
+        "text": "FAQs"
+      },
+      {
+        "id": 12,
+        "role": "link",
+        "text": "Nutrition"
+      },
+      {
+        "id": 13,
+        "role": "link",
+        "text": "Pressroom"
+      },
+      {
+        "id": 14,
+        "role": "link",
+        "text": "Accessibility"
+      },
+      {
+        "id": 15,
+        "role": "link",
+        "text": "Do Not Sell or Share My Data"
+      },
+      {
+        "id": 16,
+        "role": "link",
+        "text": "Responsibility.org"
+      },
+      {
+        "id": 17,
+        "role": "link",
+        "text": "Our Thinking About Drinking"
+      }
+    ]
+  },
+  "expectedDecision": "not_consent"
+}

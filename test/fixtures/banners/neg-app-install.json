@@ -1,0 +1,29 @@
+{
+  "id": "neg-app-install",
+  "kind": "negative",
+  "stage": 1,
+  "synthetic": true,
+  "note": "Smart app-install banner with an 'accept' style primary action.",
+  "gate": "other",
+  "banner": {
+    "text": "Get the Brightside app Faster, smoother, and free. Rated 4.8 by 120,000 readers. Open in app Continue in browser",
+    "controls": [
+      {
+        "id": 0,
+        "role": "button",
+        "text": "Close"
+      },
+      {
+        "id": 1,
+        "role": "button",
+        "text": "Open in app"
+      },
+      {
+        "id": 2,
+        "role": "button",
+        "text": "Continue in browser"
+      }
+    ]
+  },
+  "expectedDecision": "not_consent"
+}

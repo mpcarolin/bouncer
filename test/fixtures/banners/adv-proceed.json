@@ -1,0 +1,28 @@
+{
+  "id": "adv-proceed",
+  "kind": "positive",
+  "stage": 1,
+  "synthetic": true,
+  "note": "Adversarial: 'Proceed' accepts, so it is labelled accept (ground truth) and, with no refusal route, the decision is no_option. No list is expected to know this wording; it benchmarks the §0 lists, the labeller and corroboration.",
+  "gate": "consent",
+  "banner": {
+    "text": "This website stores cookies on your device to remember your preferences and to measure how the site is used. Read our Privacy Notice to learn more. Privacy Notice Proceed",
+    "controls": [
+      {
+        "id": 0,
+        "role": "link",
+        "text": "Privacy Notice"
+      },
+      {
+        "id": 1,
+        "role": "button",
+        "text": "Proceed"
+      }
+    ]
+  },
+  "expectedLabels": {
+    "0": "link",
+    "1": "accept"
+  },
+  "expectedDecision": "no_option"
+}

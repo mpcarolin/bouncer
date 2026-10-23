@@ -1,0 +1,109 @@
+{
+  "id": "pfa-cookiebot",
+  "kind": "positive",
+  "stage": 1,
+  "note": "Cookiebot (pfa.dk, English UI), \"Deny\" = reject; toggles already off. Labels: the three Cookiebot tabs are 'other'; 'Allow selection' (11) saves the toggles, so 'save'. Decision: 'Deny' (10) is reject, §2f.1, which beats save-with-toggles.",
+  "gate": "consent",
+  "banner": {
+    "text": "Consent Details About This website uses cookies PFA uses cookies, including cookies from third parties. These cookies include: functional cookies that are used to optimize content, such as remembering your preferred language, statistical cookies that record how the website is used, and marketing cookies that are used to target ads. You consent to this by clicking \"Allow all\". If you want to change your consent, you can click on \"Manage consent\". If you later regret your choice, you can always go to \"Manage cookie consent\" at the bottom of the page and make a change. Read more about our use of cookies and processing of personal data. Consent Selection Necessary Preferences Statistics Marketi…",
+    "controls": [
+      {
+        "id": 0,
+        "role": "link",
+        "text": "Cookiebot by Usercentrics - opens in a new window",
+        "domId": "CybotCookiebotDialogPoweredbyCybot"
+      },
+      {
+        "id": 1,
+        "role": "other",
+        "text": "Consent",
+        "domId": "CybotCookiebotDialogNavDeclaration"
+      },
+      {
+        "id": 2,
+        "role": "other",
+        "text": "Details",
+        "domId": "CybotCookiebotDialogNavDetails"
+      },
+      {
+        "id": 3,
+        "role": "other",
+        "text": "About",
+        "domId": "CybotCookiebotDialogNavAbout"
+      },
+      {
+        "id": 4,
+        "role": "link",
+        "text": "use of cookies"
+      },
+      {
+        "id": 5,
+        "role": "link",
+        "text": "processing of personal data"
+      },
+      {
+        "id": 6,
+        "role": "toggle",
+        "text": "Necessary",
+        "on": true,
+        "disabled": true,
+        "domId": "CybotCookiebotDialogBodyLevelButtonNecessary"
+      },
+      {
+        "id": 7,
+        "role": "toggle",
+        "text": "Preferences",
+        "on": false,
+        "domId": "CybotCookiebotDialogBodyLevelButtonPreferences"
+      },
+      {
+        "id": 8,
+        "role": "toggle",
+        "text": "Statistics",
+        "on": false,
+        "domId": "CybotCookiebotDialogBodyLevelButtonStatistics"
+      },
+      {
+        "id": 9,
+        "role": "toggle",
+        "text": "Marketing",
+        "on": false,
+        "domId": "CybotCookiebotDialogBodyLevelButtonMarketing"
+      },
+      {
+        "id": 10,
+        "role": "button",
+        "text": "Deny",
+        "domId": "CybotCookiebotDialogBodyButtonDecline"
+      },
+      {
+        "id": 11,
+        "role": "button",
+        "text": "Allow selection",
+        "domId": "CybotCookiebotDialogBodyLevelButtonLevelOptinAllowallSelection"
+      },
+      {
+        "id": 12,
+        "role": "button",
+        "text": "Allow all",
+        "domId": "CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll"
+      }
+    ]
+  },
+  "expectedLabels": {
+    "0": "link",
+    "1": "other",
+    "2": "other",
+    "3": "other",
+    "4": "link",
+    "5": "link",
+    "6": "toggle-necessary",
+    "7": "toggle-optional",
+    "8": "toggle-optional",
+    "9": "toggle-optional",
+    "10": "reject",
+    "11": "save",
+    "12": "accept"
+  },
+  "expectedDecision": "reject"
+}

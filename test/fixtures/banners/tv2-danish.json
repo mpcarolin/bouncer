@@ -1,0 +1,48 @@
+{
+  "id": "tv2-danish",
+  "kind": "positive",
+  "stage": 1,
+  "note": "OneTrust in Danish (outside Gemini Nano's documented en/ja/es/de/fr). \"Afvis alle\" = reject all. Decision: 'Afvis alle' (3) is reject, §2f.1.",
+  "gate": "consent",
+  "banner": {
+    "text": "Dine data og cookies TV 2 Danmark A/S ønsker dit samtykke til at anvende cookies til præference-, statistik- og marketingformål. Det indebærer at TV 2 og TV 2s 577 samarbejdspartnere kan placere og anvende cookies med henblik på at målrette annoncer, levere tilpasset indhold, og foretage annonce- og indholdsmåling, lave produktudvikling og opnå målgruppeindsigt. Du giver samtidigt samtykke til at dine personoplysninger, såsom din IP-adresse, ID og browser, vil blive delt med og/eller videregivet til samarbejdspartnere, som kan bruge disse oplysninger til deres egne formål, f.eks. at vise dig målrettede annoncer af TV 2s produkter på tredjepartsplatforme. Du kan læse mere om behandlingen af …",
+    "controls": [
+      {
+        "id": 0,
+        "role": "link",
+        "text": "Læs mere i TV 2 Privatlivspolitik, åbner i et nyt vindue"
+      },
+      {
+        "id": 1,
+        "role": "link",
+        "text": "Liste over partnere (leverandører)"
+      },
+      {
+        "id": 2,
+        "role": "button",
+        "text": "Indstillinger, Åbner præferencecenterdialogen",
+        "domId": "onetrust-pc-btn-handler"
+      },
+      {
+        "id": 3,
+        "role": "button",
+        "text": "Afvis alle",
+        "domId": "onetrust-reject-all-handler"
+      },
+      {
+        "id": 4,
+        "role": "button",
+        "text": "Acceptér alle",
+        "domId": "onetrust-accept-btn-handler"
+      }
+    ]
+  },
+  "expectedLabels": {
+    "0": "link",
+    "1": "link",
+    "2": "settings",
+    "3": "reject",
+    "4": "accept"
+  },
+  "expectedDecision": "reject"
+}

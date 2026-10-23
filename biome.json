@@ -6,7 +6,15 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!!docs", "!!spike", "!!backlog", "!!.superpowers", "!!pnpm-lock.yaml"]
+    "includes": [
+      "**",
+      "!!docs",
+      "!!spike",
+      "!!test/fixtures/banners",
+      "!!backlog",
+      "!!.superpowers",
+      "!!pnpm-lock.yaml"
+    ]
   },
   "formatter": {
     "enabled": true,

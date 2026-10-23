@@ -1,0 +1,28 @@
+{
+  "id": "neg-taylorstitch-newsletter",
+  "kind": "negative",
+  "stage": 1,
+  "note": "Klaviyo email signup, 20% off.",
+  "gate": "other",
+  "banner": {
+    "text": "SIGN UP FOR EMAILS Get 20% Off Your First Purchase Get the latest news on fresh gear, exciting collaborations, and all the good stuff. Email Address SIGN UP NOW Note: Some exclusions apply. Click here for details.",
+    "controls": [
+      {
+        "id": 0,
+        "role": "button",
+        "text": "Close dialog"
+      },
+      {
+        "id": 1,
+        "role": "button",
+        "text": "SIGN UP NOW"
+      },
+      {
+        "id": 2,
+        "role": "link",
+        "text": "Click here for details"
+      }
+    ]
+  },
+  "expectedDecision": "not_consent"
+}

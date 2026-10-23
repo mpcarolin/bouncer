@@ -1,0 +1,47 @@
+{
+  "id": "ikea",
+  "kind": "positive",
+  "stage": 1,
+  "note": "OneTrust configured with NO reject: only \"Ok\" + \"Your privacy choices\" -> must open settings. Labels: 'Ok' accepts, but its wording is acknowledge (§2e). Hand-run of §2f: no reject, no toggles so no save, settings exists (3) so settings beats everything below it.",
+  "gate": "consent",
+  "banner": {
+    "text": "IKEA US and our digital partners use cookies on this site. Some are strictly necessary to run the site and others are used for measuring site usage, enabling personalization and for advertising, marketing, and social media. View our Privacy Policy, California Notice at Collection, and Cookie Policy for more information. Your privacy choices Ok",
+    "controls": [
+      {
+        "id": 0,
+        "role": "link",
+        "text": "Privacy Policy"
+      },
+      {
+        "id": 1,
+        "role": "link",
+        "text": "California Notice at Collection"
+      },
+      {
+        "id": 2,
+        "role": "link",
+        "text": "Cookie Policy"
+      },
+      {
+        "id": 3,
+        "role": "button",
+        "text": "Your privacy choices, Opens the preference center dialog",
+        "domId": "onetrust-pc-btn-handler"
+      },
+      {
+        "id": 4,
+        "role": "button",
+        "text": "Ok",
+        "domId": "onetrust-accept-btn-handler"
+      }
+    ]
+  },
+  "expectedLabels": {
+    "0": "link",
+    "1": "link",
+    "2": "link",
+    "3": "settings",
+    "4": "acknowledge"
+  },
+  "expectedDecision": "settings"
+}

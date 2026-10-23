@@ -1,0 +1,58 @@
+{
+  "id": "neg-tiktok-login",
+  "kind": "negative",
+  "stage": 1,
+  "note": "Login modal; generic detector DOES pick it.",
+  "gate": "other",
+  "banner": {
+    "text": "Skip Log in to TikTok Use QR code Use phone or email Continue with Facebook Continue with Google Continue with Apple By continuing, you agree to TikTok’s Terms of Service and confirm that you have read TikTok’s Privacy Policy. Don’t have an account? Sign up",
+    "controls": [
+      {
+        "id": 0,
+        "role": "button",
+        "text": "Skip"
+      },
+      {
+        "id": 1,
+        "role": "link",
+        "text": "Use QR code"
+      },
+      {
+        "id": 2,
+        "role": "link",
+        "text": "Use phone or email"
+      },
+      {
+        "id": 3,
+        "role": "link",
+        "text": "Continue with Facebook"
+      },
+      {
+        "id": 4,
+        "role": "link",
+        "text": "Continue with Google"
+      },
+      {
+        "id": 5,
+        "role": "link",
+        "text": "Continue with Apple"
+      },
+      {
+        "id": 6,
+        "role": "link",
+        "text": "Terms of Service"
+      },
+      {
+        "id": 7,
+        "role": "link",
+        "text": "Privacy Policy"
+      },
+      {
+        "id": 8,
+        "role": "link",
+        "text": "Sign up"
+      }
+    ]
+  },
+  "expectedDecision": "not_consent"
+}

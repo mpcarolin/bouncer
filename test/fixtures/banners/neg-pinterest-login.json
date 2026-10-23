@@ -1,0 +1,59 @@
+{
+  "id": "neg-pinterest-login",
+  "kind": "negative",
+  "stage": 1,
+  "note": "Login modal; generic detector DOES pick it (mentions Privacy Policy). Has a \"Show password\" checkbox that serialises as a toggle.",
+  "gate": "other",
+  "banner": {
+    "text": "Welcome to Pinterest Log in to discover more ideas just for you Email Password Forgot password? Log in OR Continue with Google Continue with QR code New to Pinterest? Join for free Terms of Service · Privacy Policy · Notice at Collection",
+    "controls": [
+      {
+        "id": 0,
+        "role": "toggle",
+        "text": "Show password",
+        "on": false
+      },
+      {
+        "id": 1,
+        "role": "link",
+        "text": "Forgot password?"
+      },
+      {
+        "id": 2,
+        "role": "button",
+        "text": "Log in"
+      },
+      {
+        "id": 3,
+        "role": "button",
+        "text": "Continue with Google"
+      },
+      {
+        "id": 4,
+        "role": "button",
+        "text": "QR code login button"
+      },
+      {
+        "id": 5,
+        "role": "link",
+        "text": "Join for free"
+      },
+      {
+        "id": 6,
+        "role": "link",
+        "text": "Terms of Service"
+      },
+      {
+        "id": 7,
+        "role": "link",
+        "text": "Privacy Policy"
+      },
+      {
+        "id": 8,
+        "role": "link",
+        "text": "Notice at Collection"
+      }
+    ]
+  },
+  "expectedDecision": "not_consent"
+}

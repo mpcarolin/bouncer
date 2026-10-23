@@ -1,0 +1,23 @@
+{
+  "id": "neg-newsweek-paywall",
+  "kind": "negative",
+  "stage": 1,
+  "note": "Paywall/upgrade drawer.",
+  "gate": "other",
+  "banner": {
+    "text": "Upgrade today. Unlimited ad-free access. First year $10 Auto-renews at $49/year",
+    "controls": [
+      {
+        "id": 0,
+        "role": "button",
+        "text": "First year $10"
+      },
+      {
+        "id": 1,
+        "role": "button",
+        "text": "Close modal"
+      }
+    ]
+  },
+  "expectedDecision": "not_consent"
+}

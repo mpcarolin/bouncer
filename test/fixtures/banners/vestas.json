@@ -1,0 +1,74 @@
+{
+  "id": "vestas",
+  "kind": "positive",
+  "stage": 1,
+  "note": "Cookie Information CMP; reject button carries role=\"alert\". Labels: role=alert control 'Reject all' is a real button, ported as role button. Decision: reject (5), §2f.1 beats save/settings.",
+  "gate": "consent",
+  "banner": {
+    "text": "You are in control of your own data Vestas uses cookies on our websites for various purposes related to web functionalities, web analytics, and marketing. We use our own and third-party cookies to improve the usability of our website, store your preferences and analyse your browsing habits. At any time, you may update your cookie preferences by clicking on the cookie-settings icon at the bottom left corner of this website. You may also read more about our use of cookies and other technologies, as well as our collection and processing of personal data across Vestas domains by clicking on the following link: Cookie policy Strictly necessary Functional Statistical Marketing Reject all Accept a…",
+    "controls": [
+      {
+        "id": 0,
+        "role": "link",
+        "text": "Cookie policy"
+      },
+      {
+        "id": 1,
+        "role": "toggle",
+        "text": "Strictly necessary",
+        "on": true,
+        "disabled": true,
+        "domId": "cookie_cat_necessary"
+      },
+      {
+        "id": 2,
+        "role": "toggle",
+        "text": "checkbox for Functional",
+        "on": false,
+        "domId": "cookie_cat_functional"
+      },
+      {
+        "id": 3,
+        "role": "toggle",
+        "text": "checkbox for Statistical",
+        "on": false,
+        "domId": "cookie_cat_statistic"
+      },
+      {
+        "id": 4,
+        "role": "toggle",
+        "text": "checkbox for Marketing",
+        "on": false,
+        "domId": "cookie_cat_marketing"
+      },
+      {
+        "id": 5,
+        "role": "button",
+        "text": "Reject all",
+        "domId": "declineButton"
+      },
+      {
+        "id": 6,
+        "role": "button",
+        "text": "Accept all"
+      },
+      {
+        "id": 7,
+        "role": "button",
+        "text": "Show details",
+        "domId": "show_details"
+      }
+    ]
+  },
+  "expectedLabels": {
+    "0": "link",
+    "1": "toggle-necessary",
+    "2": "toggle-optional",
+    "3": "toggle-optional",
+    "4": "toggle-optional",
+    "5": "reject",
+    "6": "accept",
+    "7": "settings"
+  },
+  "expectedDecision": "reject"
+}

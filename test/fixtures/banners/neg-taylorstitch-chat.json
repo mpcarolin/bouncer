@@ -1,0 +1,19 @@
+{
+  "id": "neg-taylorstitch-chat",
+  "kind": "negative",
+  "stage": 1,
+  "note": "Chat launcher button only, no text (same-origin iframe).",
+  "gate": "other",
+  "banner": {
+    "text": "",
+    "controls": [
+      {
+        "id": 0,
+        "role": "button",
+        "text": "Chat with us",
+        "domId": "gorgias-chat-messenger-button"
+      }
+    ]
+  },
+  "expectedDecision": "not_consent"
+}

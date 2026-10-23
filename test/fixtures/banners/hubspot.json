@@ -1,0 +1,48 @@
+{
+  "id": "hubspot",
+  "kind": "positive",
+  "stage": 1,
+  "note": "HubSpot home-grown banner, Decline all present. Decision: 'Decline all' (3) is reject, §2f.1.",
+  "gate": "consent",
+  "banner": {
+    "text": "× close We use cookies to improve HubSpot’s site. Some cookies are necessary for our website and services to function properly. Other cookies are optional and help personalize your experience, including advertising and analytics. You can consent to all cookies, decline all optional cookies, or manage optional cookies. Without a selection, our default cookie settings will apply. You can change your preferences at any time. To learn more, check out our Cookie Policy. Accept All Decline All Manage Cookies",
+    "controls": [
+      {
+        "id": 0,
+        "role": "button",
+        "text": "close"
+      },
+      {
+        "id": 1,
+        "role": "link",
+        "text": "Cookie Policy"
+      },
+      {
+        "id": 2,
+        "role": "button",
+        "text": "Accept all",
+        "domId": "hs-eu-confirmation-button"
+      },
+      {
+        "id": 3,
+        "role": "button",
+        "text": "Decline all",
+        "domId": "hs-eu-decline-button"
+      },
+      {
+        "id": 4,
+        "role": "button",
+        "text": "Manage Cookies",
+        "domId": "hs-eu-cookie-settings-button"
+      }
+    ]
+  },
+  "expectedLabels": {
+    "0": "close",
+    "1": "link",
+    "2": "accept",
+    "3": "reject",
+    "4": "settings"
+  },
+  "expectedDecision": "reject"
+}

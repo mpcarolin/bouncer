@@ -1,0 +1,24 @@
+{
+  "id": "neg-privacy-policy-update",
+  "kind": "negative",
+  "stage": 1,
+  "synthetic": true,
+  "note": "Notice of an updated privacy policy: informational, with no consent to give or withhold.",
+  "gate": "other",
+  "banner": {
+    "text": "We have updated our Privacy Policy. From 1 November 2026 our Privacy Policy explains how we collect, use and share personal information, and your rights over it. Read the updated policy Got it",
+    "controls": [
+      {
+        "id": 0,
+        "role": "link",
+        "text": "Read the updated policy"
+      },
+      {
+        "id": 1,
+        "role": "button",
+        "text": "Got it"
+      }
+    ]
+  },
+  "expectedDecision": "not_consent"
+}

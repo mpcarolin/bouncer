@@ -1,0 +1,29 @@
+{
+  "id": "neg-notification-prompt",
+  "kind": "negative",
+  "stage": 1,
+  "synthetic": true,
+  "note": "In-page push-notification pre-prompt. Mentions the browser and privacy settings but is not about cookies or tracking.",
+  "gate": "other",
+  "banner": {
+    "text": "Never miss a story Turn on notifications to get breaking news alerts straight to your device. You can change this at any time in your browser settings. Allow notifications Not now",
+    "controls": [
+      {
+        "id": 0,
+        "role": "button",
+        "text": "Allow notifications"
+      },
+      {
+        "id": 1,
+        "role": "button",
+        "text": "Not now"
+      },
+      {
+        "id": 2,
+        "role": "link",
+        "text": "Notification settings"
+      }
+    ]
+  },
+  "expectedDecision": "not_consent"
+}

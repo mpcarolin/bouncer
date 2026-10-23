@@ -1,0 +1,54 @@
+{
+  "id": "nvidia",
+  "kind": "positive",
+  "stage": 1,
+  "note": "OneTrust, reject present (Manage Settings / Reject Optional / Accept All). Required fixture. Decision: 'Reject Optional' (4) is a reject button, §2f.1.",
+  "gate": "consent",
+  "banner": {
+    "text": "NVIDIA uses cookies to improve your experience on our web site. We and our third-party partners also use cookies and other tools to collect and record information you provide as well as information about your interactions with our websites for performance improvement, analytics, and to assist in marketing efforts. By clicking \"Accept All\", you consent to our use of cookies and other tools as described in our Cookie Policy. You can manage your cookie settings by clicking on \"Manage Settings.\" By continuing to use this site or by clicking one of the buttons below, you agree to our Terms of Service (which contains important waivers). Please see our Privacy Policy for more information on our pr…",
+    "controls": [
+      {
+        "id": 0,
+        "role": "link",
+        "text": "Cookie Policy"
+      },
+      {
+        "id": 1,
+        "role": "link",
+        "text": "Terms of Service"
+      },
+      {
+        "id": 2,
+        "role": "link",
+        "text": "Privacy Policy"
+      },
+      {
+        "id": 3,
+        "role": "button",
+        "text": "Manage Settings, Opens the preference center dialog",
+        "domId": "onetrust-pc-btn-handler"
+      },
+      {
+        "id": 4,
+        "role": "button",
+        "text": "Reject Optional",
+        "domId": "onetrust-reject-all-handler"
+      },
+      {
+        "id": 5,
+        "role": "button",
+        "text": "Accept All",
+        "domId": "onetrust-accept-btn-handler"
+      }
+    ]
+  },
+  "expectedLabels": {
+    "0": "link",
+    "1": "link",
+    "2": "link",
+    "3": "settings",
+    "4": "reject",
+    "5": "accept"
+  },
+  "expectedDecision": "reject"
+}

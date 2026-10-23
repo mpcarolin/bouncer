@@ -1,0 +1,112 @@
+{
+  "id": "nvidia-settings",
+  "kind": "positive",
+  "stage": 2,
+  "note": "Stage 2: NVIDIA OneTrust preference centre after \"Manage Settings\". Toggles already off (US); has Decline All. Stage 2. Labels: the accordion header buttons (5, 6, 8, 10) are 'other', toggles are only the three switches; 'Save and Accept' (13) is on the §0 allow-list so 'save'. Decision: 'Decline All' (12) is reject, §2f.1 beats save-with-toggles.",
+  "gate": "consent",
+  "banner": {
+    "text": "Cookie Settings We and our third-party partners (including social media, advertising, and analytics partners) use cookies and other tracking technologies to collect, store, monitor, and process certain information about you when you visit our website. The information collected might relate to you, your preferences, or your device. We use that information to make the site work, analyze performance and traffic on our website, provide a more personalized web experience, and assist in our marketing efforts. Under certain privacy laws, you have the right to direct us not to \"sell\" or \"share\" your personal information for targeted advertising. To opt-out of the \"sale\" and \"sharing\" of personal in…",
+    "controls": [
+      {
+        "id": 0,
+        "role": "button",
+        "text": "Close preference center",
+        "domId": "close-pc-btn-handler"
+      },
+      {
+        "id": 1,
+        "role": "link",
+        "text": "NVIDIA Preference Center"
+      },
+      {
+        "id": 2,
+        "role": "link",
+        "text": "Cookie Policy"
+      },
+      {
+        "id": 3,
+        "role": "link",
+        "text": "Terms of Service"
+      },
+      {
+        "id": 4,
+        "role": "link",
+        "text": "Privacy Policy"
+      },
+      {
+        "id": 5,
+        "role": "button",
+        "text": "Required Cookies Always Active"
+      },
+      {
+        "id": 6,
+        "role": "button",
+        "text": "Performance Cookies"
+      },
+      {
+        "id": 7,
+        "role": "toggle",
+        "text": "Performance Cookies",
+        "on": false,
+        "domId": "ot-group-id-C0002"
+      },
+      {
+        "id": 8,
+        "role": "button",
+        "text": "Personalization Cookies"
+      },
+      {
+        "id": 9,
+        "role": "toggle",
+        "text": "Personalization Cookies",
+        "on": false,
+        "domId": "ot-group-id-C0003"
+      },
+      {
+        "id": 10,
+        "role": "button",
+        "text": "Advertising Cookies"
+      },
+      {
+        "id": 11,
+        "role": "toggle",
+        "text": "Advertising Cookies",
+        "on": false,
+        "domId": "ot-group-id-C0004"
+      },
+      {
+        "id": 12,
+        "role": "button",
+        "text": "Decline All"
+      },
+      {
+        "id": 13,
+        "role": "button",
+        "text": "Save and Accept"
+      },
+      {
+        "id": 14,
+        "role": "link",
+        "text": "Powered by OneTrust Opens in a new Tab"
+      }
+    ]
+  },
+  "expectedLabels": {
+    "0": "close",
+    "1": "link",
+    "2": "link",
+    "3": "link",
+    "4": "link",
+    "5": "other",
+    "6": "other",
+    "7": "toggle-optional",
+    "8": "other",
+    "9": "toggle-optional",
+    "10": "other",
+    "11": "toggle-optional",
+    "12": "reject",
+    "13": "save",
+    "14": "link"
+  },
+  "expectedDecision": "reject"
+}

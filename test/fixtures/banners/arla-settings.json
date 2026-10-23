@@ -1,0 +1,93 @@
+{
+  "id": "arla-settings",
+  "kind": "positive",
+  "stage": 2,
+  "note": "Stage 2: OneTrust preference centre shown on first load at arla.com. Optional toggles pre-ON, only \"Confirm My Choices\" -> switch off 5,7,9 and save. Stage 2. Labels: the category header buttons are 'other'; optional toggles are pre-ON. Hand-run of §2f: no reject, settings is off at stage 2, so save-with-toggles: switch 5, 7, 9 off, then 'Confirm My Choices' (10).",
+  "gate": "consent",
+  "banner": {
+    "text": "No milk without cookies When you visit any website, it may store or retrieve information on your browser, mostly in the form of cookies. This information might be about you, your preferences or your device and is mostly used to make the site work as you expect it to. The information does not usually directly identify you, but it can give you a more personalized web experience. Because we respect your right to privacy, you can choose not to allow some types of cookies. Click on the different category headings to find out more and change our default settings. However, blocking some types of cookies may impact your experience of the site and the services we are able to offer. Please read Googl…",
+    "controls": [
+      {
+        "id": 0,
+        "role": "link",
+        "text": "Google Privacy Policy"
+      },
+      {
+        "id": 1,
+        "role": "link",
+        "text": "cookie policy"
+      },
+      {
+        "id": 2,
+        "role": "link",
+        "text": "privacy policy."
+      },
+      {
+        "id": 3,
+        "role": "button",
+        "text": "Strictly Necessary"
+      },
+      {
+        "id": 4,
+        "role": "button",
+        "text": "Performance"
+      },
+      {
+        "id": 5,
+        "role": "toggle",
+        "text": "Performance",
+        "on": true,
+        "domId": "ot-group-id-C0002"
+      },
+      {
+        "id": 6,
+        "role": "button",
+        "text": "Functional"
+      },
+      {
+        "id": 7,
+        "role": "toggle",
+        "text": "Functional",
+        "on": true,
+        "domId": "ot-group-id-C0003"
+      },
+      {
+        "id": 8,
+        "role": "button",
+        "text": "Targeting"
+      },
+      {
+        "id": 9,
+        "role": "toggle",
+        "text": "Targeting",
+        "on": true,
+        "domId": "ot-group-id-C0004"
+      },
+      {
+        "id": 10,
+        "role": "button",
+        "text": "Confirm My Choices"
+      },
+      {
+        "id": 11,
+        "role": "link",
+        "text": "Powered by OneTrust Opens in a new Tab"
+      }
+    ]
+  },
+  "expectedLabels": {
+    "0": "link",
+    "1": "link",
+    "2": "link",
+    "3": "other",
+    "4": "other",
+    "5": "toggle-optional",
+    "6": "other",
+    "7": "toggle-optional",
+    "8": "other",
+    "9": "toggle-optional",
+    "10": "save",
+    "11": "link"
+  },
+  "expectedDecision": "save"
+}

@@ -1,0 +1,23 @@
+{
+  "id": "neg-allbirds-announcement",
+  "kind": "negative",
+  "stage": 1,
+  "note": "Shipping announcement bar with unlabeled carousel buttons.",
+  "gate": "other",
+  "banner": {
+    "text": "Due to increased demand, orders may take up to 30 days to ship. Free ground shipping on orders over $100",
+    "controls": [
+      {
+        "id": 0,
+        "role": "button",
+        "text": ""
+      },
+      {
+        "id": 1,
+        "role": "button",
+        "text": ""
+      }
+    ]
+  },
+  "expectedDecision": "not_consent"
+}

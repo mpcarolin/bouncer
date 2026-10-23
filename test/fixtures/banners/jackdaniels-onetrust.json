@@ -1,0 +1,48 @@
+{
+  "id": "jackdaniels-onetrust",
+  "kind": "positive",
+  "stage": 1,
+  "note": "OneTrust with Reject All and a Close X. Decision: 'Reject All' (2) is reject, §2f.1, ahead of the Close X.",
+  "gate": "consent",
+  "banner": {
+    "text": "By clicking “Accept All Cookies”, you agree to the storing of cookies on your device to enhance site navigation, analyze site usage, and assist in our marketing efforts. Cookie Policy Manage Consent Preferences Reject All Accept All Cookies",
+    "controls": [
+      {
+        "id": 0,
+        "role": "link",
+        "text": "More information about your privacy, opens in a new tab"
+      },
+      {
+        "id": 1,
+        "role": "button",
+        "text": "Manage Consent Preferences, Opens the preference center dia…",
+        "domId": "onetrust-pc-btn-handler"
+      },
+      {
+        "id": 2,
+        "role": "button",
+        "text": "Reject All",
+        "domId": "onetrust-reject-all-handler"
+      },
+      {
+        "id": 3,
+        "role": "button",
+        "text": "Accept All Cookies",
+        "domId": "onetrust-accept-btn-handler"
+      },
+      {
+        "id": 4,
+        "role": "button",
+        "text": "Close"
+      }
+    ]
+  },
+  "expectedLabels": {
+    "0": "link",
+    "1": "settings",
+    "2": "reject",
+    "3": "accept",
+    "4": "close"
+  },
+  "expectedDecision": "reject"
+}

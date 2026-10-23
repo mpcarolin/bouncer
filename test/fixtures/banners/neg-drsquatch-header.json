@@ -1,0 +1,74 @@
+{
+  "id": "neg-drsquatch-header",
+  "kind": "negative",
+  "stage": 1,
+  "note": "Sticky header carrying a promo announcement.",
+  "gate": "other",
+  "banner": {
+    "text": "SAVE UP TO 30% Subscribe today! NEW! LIMITED EDITION ONE PIECE SUBSCRIBE REWARDS SHOP OUR STORY US Cart is empty 0",
+    "controls": [
+      {
+        "id": 0,
+        "role": "link",
+        "text": "Save up to 30% Subscribe today!"
+      },
+      {
+        "id": 1,
+        "role": "link",
+        "text": "NEW! Limited Edition ONE PIECE"
+      },
+      {
+        "id": 2,
+        "role": "button",
+        "text": "Previous slide"
+      },
+      {
+        "id": 3,
+        "role": "button",
+        "text": "Next slide"
+      },
+      {
+        "id": 4,
+        "role": "link",
+        "text": "Go to DR. Squatch homepage"
+      },
+      {
+        "id": 5,
+        "role": "link",
+        "text": "Subscribe"
+      },
+      {
+        "id": 6,
+        "role": "link",
+        "text": "Rewards"
+      },
+      {
+        "id": 7,
+        "role": "link",
+        "text": "Shop"
+      },
+      {
+        "id": 8,
+        "role": "link",
+        "text": "Our Story"
+      },
+      {
+        "id": 9,
+        "role": "button",
+        "text": "Select an option",
+        "domId": "headlessui-listbox-button-:R6pq5d4l5:"
+      },
+      {
+        "id": 10,
+        "role": "link",
+        "text": "Go to account page"
+      },
+      {
+        "id": 11,
+        "role": "button",
+        "text": "Open cart"
+      }
+    ]
+  },
+  "expectedDecision": "not_consent"
+}

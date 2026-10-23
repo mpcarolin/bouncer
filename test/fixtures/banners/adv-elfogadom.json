@@ -1,0 +1,28 @@
+{
+  "id": "adv-elfogadom",
+  "kind": "positive",
+  "stage": 1,
+  "synthetic": true,
+  "note": "Adversarial: 'Elfogadom' accepts, so it is labelled accept (ground truth) and, with no refusal route, the decision is no_option. No list is expected to know this wording; it benchmarks the §0 lists, the labeller and corroboration.",
+  "gate": "consent",
+  "banner": {
+    "text": "Weboldalunk sütiket használ a felhasználói élmény javítására, a forgalom elemzésére és személyre szabott hirdetések megjelenítésére. Részletek az adatkezelési tájékoztatóban. Adatkezelési tájékoztató Elfogadom",
+    "controls": [
+      {
+        "id": 0,
+        "role": "link",
+        "text": "Adatkezelési tájékoztató"
+      },
+      {
+        "id": 1,
+        "role": "button",
+        "text": "Elfogadom"
+      }
+    ]
+  },
+  "expectedLabels": {
+    "0": "link",
+    "1": "accept"
+  },
+  "expectedDecision": "no_option"
+}

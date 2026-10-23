@@ -1,0 +1,45 @@
+{
+  "id": "chubbies-termly",
+  "kind": "positive",
+  "stage": 1,
+  "note": "Termly, NO reject: two \"Preferences\" buttons + ACCEPT -> open settings. Labels: 'Cookie Policy' and 'Privacy Policy' are buttons that open policy text, so 'link'. Hand-run of §2f: no reject, no toggles, settings exists (two 'Preferences' buttons), so settings.",
+  "gate": "consent",
+  "banner": {
+    "text": "We use essential cookies to make our site work. With your consent, we may also use non-essential cookies to improve user experience, personalize content, and analyze website traffic. For these reasons, we may share your site usage data with our analytics partners. By clicking “Accept,” you agree to our website's cookie use as described in our Cookie Policy and Privacy Policy. You can change your cookie settings at any time by clicking “Preferences.” PREFERENCES ACCEPT",
+    "controls": [
+      {
+        "id": 0,
+        "role": "button",
+        "text": "Cookie Policy"
+      },
+      {
+        "id": 1,
+        "role": "button",
+        "text": "Privacy Policy"
+      },
+      {
+        "id": 2,
+        "role": "button",
+        "text": "Preferences"
+      },
+      {
+        "id": 3,
+        "role": "button",
+        "text": "PREFERENCES"
+      },
+      {
+        "id": 4,
+        "role": "button",
+        "text": "ACCEPT"
+      }
+    ]
+  },
+  "expectedLabels": {
+    "0": "link",
+    "1": "link",
+    "2": "settings",
+    "3": "settings",
+    "4": "accept"
+  },
+  "expectedDecision": "settings"
+}

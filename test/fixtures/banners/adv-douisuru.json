@@ -1,0 +1,28 @@
+{
+  "id": "adv-douisuru",
+  "kind": "positive",
+  "stage": 1,
+  "synthetic": true,
+  "note": "Adversarial: '同意する' accepts, so it is labelled accept (ground truth) and, with no refusal route, the decision is no_option. No list is expected to know this wording; it benchmarks the §0 lists, the labeller and corroboration.",
+  "gate": "consent",
+  "banner": {
+    "text": "当サイトでは、サイトの利便性向上および広告配信のためにクッキーを使用しています。詳しくはプライバシーポリシーをご覧ください。 プライバシーポリシー 同意する",
+    "controls": [
+      {
+        "id": 0,
+        "role": "link",
+        "text": "プライバシーポリシー"
+      },
+      {
+        "id": 1,
+        "role": "button",
+        "text": "同意する"
+      }
+    ]
+  },
+  "expectedLabels": {
+    "0": "link",
+    "1": "accept"
+  },
+  "expectedDecision": "no_option"
+}

@@ -1,0 +1,28 @@
+{
+  "id": "adv-continue-to-site",
+  "kind": "positive",
+  "stage": 1,
+  "synthetic": true,
+  "note": "Adversarial: 'Continue to site' accepts, so it is labelled accept (ground truth) and, with no refusal route, the decision is no_option. No list is expected to know this wording; it benchmarks the §0 lists, the labeller and corroboration.",
+  "gate": "consent",
+  "banner": {
+    "text": "We use cookies to personalise content and ads, provide social media features and analyse our traffic. By continuing to use this site you agree to our use of cookies. Cookie Policy Continue to site",
+    "controls": [
+      {
+        "id": 0,
+        "role": "link",
+        "text": "Cookie Policy"
+      },
+      {
+        "id": 1,
+        "role": "button",
+        "text": "Continue to site"
+      }
+    ]
+  },
+  "expectedLabels": {
+    "0": "link",
+    "1": "accept"
+  },
+  "expectedDecision": "no_option"
+}

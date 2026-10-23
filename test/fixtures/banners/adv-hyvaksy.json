@@ -1,0 +1,28 @@
+{
+  "id": "adv-hyvaksy",
+  "kind": "positive",
+  "stage": 1,
+  "synthetic": true,
+  "note": "Adversarial: 'Hyväksy' accepts, so it is labelled accept (ground truth) and, with no refusal route, the decision is no_option. No list is expected to know this wording; it benchmarks the §0 lists, the labeller and corroboration.",
+  "gate": "consent",
+  "banner": {
+    "text": "Käytämme evästeitä sivuston toiminnan parantamiseen, kävijämäärien seurantaan ja kohdennettuun markkinointiin. Lue lisää tietosuojaselosteestamme. Tietosuojaseloste Hyväksy",
+    "controls": [
+      {
+        "id": 0,
+        "role": "link",
+        "text": "Tietosuojaseloste"
+      },
+      {
+        "id": 1,
+        "role": "button",
+        "text": "Hyväksy"
+      }
+    ]
+  },
+  "expectedLabels": {
+    "0": "link",
+    "1": "accept"
+  },
+  "expectedDecision": "no_option"
+}

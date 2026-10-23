@@ -1,0 +1,40 @@
+{
+  "id": "tidio-cookiebot",
+  "kind": "positive",
+  "stage": 1,
+  "note": "Cookiebot CCPA variant: an OPT-OUT toggle \"Do not sell and share my personal information\" (currently off) + Confirm. Least data = switch it ON then Confirm. Hard: only the label variant can express \"turn on\". Labels: 'Confirm' (2) saves the panel that has an opt-out toggle, so 'save'. Hand-run of §2f: no reject; an opt-out toggle plus a save control means save-with-toggles (switch 3 on, then Confirm).",
+  "gate": "consent",
+  "banner": {
+    "text": "This website uses cookies. We use cookies to ensure that our website runs smoothly, improve your experience, monitor our performance, and for personalized advertising (ads personalization and ad measurement), including with Google. To learn more about how we use cookies, go here: CCPA. You can also see how Google uses data at Google's Business Data Responsibility Site. By clicking \"Confirm\", you are giving us consent to use all cookies. Confirm Do not sell and share my personal information",
+    "controls": [
+      {
+        "id": 0,
+        "role": "link",
+        "text": "CCPA"
+      },
+      {
+        "id": 1,
+        "role": "link",
+        "text": "Google's Business Data Responsibility Site"
+      },
+      {
+        "id": 2,
+        "role": "button",
+        "text": "Confirm"
+      },
+      {
+        "id": 3,
+        "role": "toggle",
+        "text": "Do not sell and share my personal information",
+        "on": false
+      }
+    ]
+  },
+  "expectedLabels": {
+    "0": "link",
+    "1": "link",
+    "2": "save",
+    "3": "toggle-optout"
+  },
+  "expectedDecision": "save"
+}

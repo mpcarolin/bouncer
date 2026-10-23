@@ -1,0 +1,41 @@
+{
+  "id": "stackoverflow",
+  "kind": "positive",
+  "stage": 1,
+  "note": "OneTrust, reject labelled \"Necessary cookies only\"; has an ambiguous \"Close\". Decision: 'Necessary cookies only' (1) is reject, §2f.1, ahead of settings and Close.",
+  "gate": "consent",
+  "banner": {
+    "text": "By continuing to use this website, you agree Stack Exchange can store cookies on your device and disclose information in accordance with our Cookie Policy. By exiting this window, default cookies will be accepted. To reject cookies, select an option from below. Necessary cookies only Customize settings",
+    "controls": [
+      {
+        "id": 0,
+        "role": "link",
+        "text": "Cookie Policy"
+      },
+      {
+        "id": 1,
+        "role": "button",
+        "text": "Necessary cookies only",
+        "domId": "onetrust-reject-all-handler"
+      },
+      {
+        "id": 2,
+        "role": "button",
+        "text": "Customize settings, Opens the preference center dialog",
+        "domId": "onetrust-pc-btn-handler"
+      },
+      {
+        "id": 3,
+        "role": "button",
+        "text": "Close"
+      }
+    ]
+  },
+  "expectedLabels": {
+    "0": "link",
+    "1": "reject",
+    "2": "settings",
+    "3": "close"
+  },
+  "expectedDecision": "reject"
+}

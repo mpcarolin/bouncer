@@ -1,0 +1,18 @@
+{
+  "id": "neg-brooklinen-promo",
+  "kind": "negative",
+  "stage": 1,
+  "note": "Promo/discount offer-terms modal.",
+  "gate": "other",
+  "banner": {
+    "text": "Offer Terms 20% off sitewide and storewide applied at checkout using code FRIENDSANDFAM. Select bundles qualify for 50% total savings, inclusive of the 20% sitewide and storewide discount. Offer expires 10:00 AM EST on 10/27/26. Valid online and in store. While supplies last. Excludes Essential Sheet Sets & Spaces by Brooklinen brands. 50% total savings reflects the difference between the final promotional bundle price and the combined regular prices of the bundled items when purchased separately, inclusive of the 20% promotional discount. The following bundles qualify for 50% total savings: Dreamweave Waffle Bath Towel Bundle & Woven Checkerboard Duvet Set. Offer cannot be combined with ot…",
+    "controls": [
+      {
+        "id": 0,
+        "role": "button",
+        "text": ""
+      }
+    ]
+  },
+  "expectedDecision": "not_consent"
+}

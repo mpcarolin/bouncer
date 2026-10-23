@@ -1,0 +1,39 @@
+{
+  "id": "cnn",
+  "kind": "positive",
+  "stage": 1,
+  "note": "Borderline (user decision 2026-10-22): \"Agree\"-only terms/privacy dialog. Gate = consent dialog; decider = no_option (no way to refuse; acting on it is a product setting). Labels: 'Agree' accepts. Hand-run of §2f: only accept remains, so no_option (§2f.5); acting on it is the agree-to-dismiss setting, off by default.",
+  "gate": "consent",
+  "banner": {
+    "text": "Legal Terms and Privacy By clicking \"Agree\", you agree to the Terms of Use and to the collection and use of your information by cookies and similar technologies, as set forth in our Privacy Policy. Accepting does not impact privacy choices you may have under state laws. Learn more in our US State Supplement. Agree",
+    "controls": [
+      {
+        "id": 0,
+        "role": "link",
+        "text": "Terms of Use"
+      },
+      {
+        "id": 1,
+        "role": "link",
+        "text": "Privacy Policy"
+      },
+      {
+        "id": 2,
+        "role": "link",
+        "text": "US State Supplement"
+      },
+      {
+        "id": 3,
+        "role": "button",
+        "text": "Agree"
+      }
+    ]
+  },
+  "expectedLabels": {
+    "0": "link",
+    "1": "link",
+    "2": "link",
+    "3": "accept"
+  },
+  "expectedDecision": "no_option"
+}

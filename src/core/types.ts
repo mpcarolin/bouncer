@@ -32,6 +32,16 @@ export type Label =
   | "toggle-optout"
   | "other";
 
+/** What the chooser (§2f) decided, or `no_option`/`unsure` when it did not click anything. */
+export type DecisionKind =
+  | "reject"
+  | "save"
+  | "settings"
+  | "close"
+  | "agree"
+  | "no_option"
+  | "unsure";
+
 export type LabelSource = "rule" | "regex" | "ai";
 
 export type BlockReason = "accept_all" | "accept_verb_veto" | "do_not_sell";

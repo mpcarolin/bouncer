@@ -1,0 +1,28 @@
+{
+  "id": "drift-ketch",
+  "kind": "positive",
+  "stage": 1,
+  "note": "Ketch (drift.com, generic detector): only \"close banner\" X and \"Open Preferences\". Judgement: closing a US notice banner is implied consent, so settings. Hand-run of §2f: no reject, no toggles; settings (1) is chosen over Close (0) per the owner's rule that settings beats Close.",
+  "gate": "consent",
+  "banner": {
+    "text": "Your Privacy Choices We use cookies and other tracking technologies to improve user experience, distinguish you from other users, personalize advertisements, analyze website traffic, and for security purposes. You can change your cookie settings at any time by clicking “Open Preferences.” Open Preferences",
+    "controls": [
+      {
+        "id": 0,
+        "role": "button",
+        "text": "close banner"
+      },
+      {
+        "id": 1,
+        "role": "button",
+        "text": "Open Preferences",
+        "domId": "ketch-banner-button-primary"
+      }
+    ]
+  },
+  "expectedLabels": {
+    "0": "close",
+    "1": "settings"
+  },
+  "expectedDecision": "settings"
+}
