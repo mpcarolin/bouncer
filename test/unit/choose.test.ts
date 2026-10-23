@@ -52,6 +52,7 @@ describe("choose", () => {
   });
 
   test("agree-only is no_option even though accept is blocked", () => {
+    expect(labelled([btn("Agree")]).labels.get(0)?.blocked).toBe("accept_all");
     expect(run([btn("Agree")])).toEqual({ kind: "no_option" });
   });
 
@@ -103,8 +104,48 @@ describe("choose", () => {
   });
 
   test("stage 2 never hops again", () => {
-    expect(run([btn("Cookie settings")], { allowSettings: false })).toMatchObject({
+    expect(run([btn("Cookie settings")], { allowSettings: false })).toEqual({
       kind: "unsure",
+      reason: "no_usable_control",
+    });
+  });
+
+  describe("any §0 block on a refusal route ends unsure", () => {
+    const vetoed = { kind: "unsure", reason: "refusal_vetoed" };
+    test("AI reject that is accept-all, next to Close", () => {
+      const drafts = [btn("Accept cookies and continue to site"), btn("Close")];
+      const { labels } = labelled(drafts, { 0: "reject" });
+      expect(labels.get(0)?.blocked).toBe("accept_all");
+      expect(run(drafts, {}, { 0: "reject" })).toEqual(vetoed);
+    });
+    test("vetoed settings next to Close", () => {
+      const drafts = [btn("Accept and customize"), btn("Close")];
+      expect(labelled(drafts).labels.get(0)).toMatchObject({ label: "settings" });
+      expect(run(drafts)).toEqual(vetoed);
+    });
+    test("save with toggles still wins over a vetoed reject", () => {
+      const r = run([
+        btn("Doorgaan met aanvaarden"),
+        tog("Analytics", { on: true }),
+        btn("Save preferences"),
+      ]);
+      expect(r).toMatchObject({ kind: "save", target: 2 });
+    });
+    test("closeAction leave does not turn it into no_option", () => {
+      expect(run([btn("Doorgaan met aanvaarden"), btn("Close")], { closeAction: "leave" })).toEqual(
+        vetoed,
+      );
+    });
+    test("agreeToDismiss does not agree past a vetoed reject", () => {
+      expect(
+        run([btn("Doorgaan met aanvaarden"), btn("Accept all")], { agreeToDismiss: true }),
+      ).toEqual(vetoed);
+    });
+    test("a do-not-sell control does not veto Close", () => {
+      expect(run([btn("Do Not Sell My Personal Information"), btn("Close")])).toEqual({
+        kind: "close",
+        target: 1,
+      });
     });
   });
 

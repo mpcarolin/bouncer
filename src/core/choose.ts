@@ -23,7 +23,7 @@ interface Entry {
 
 const isClickable = (c: Control) => c.role === "button" || c.role === "link";
 
-/** A button first, then a link; null when there is neither. */
+/** A button first, then a link; undefined when there are none. */
 function preferButton(entries: Entry[]): Entry | undefined {
   return entries.find((e) => e.control.role === "button") ?? entries[0];
 }
@@ -79,7 +79,8 @@ export function choose(
   // A refusal-looking route existed but §0 vetoed it: never fall through to Close.
   const vetoedRefusal = clickable.some(
     (e) =>
-      e.labelled.blocked === "accept_verb_veto" &&
+      e.labelled.blocked !== undefined &&
+      e.labelled.blocked !== "do_not_sell" &&
       (e.labelled.label === "reject" || (o.allowSettings && e.labelled.label === "settings")),
   );
   if (vetoedRefusal) return { kind: "unsure", reason: "refusal_vetoed" };
