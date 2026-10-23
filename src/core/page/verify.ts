@@ -1,0 +1,126 @@
+// Did the site itself dismiss the banner, and does it stay dismissed? Bouncer's own hiding
+// (clip-path, pointer-events) is deliberately not one of the tests here.
+import { VERIFY_GONE_MS, VERIFY_STAY_MS } from "../config.ts";
+import type { NavigationWatch } from "./click.ts";
+import { parentOf } from "./dom.ts";
+
+const POLL_MS = 100;
+const AUTOCONSENT_STYLES = "style#autoconsent-prehide, style#autoconsent-css-rules";
+
+/** Detached, display:none, visibility:hidden, opacity 0, zero size, or fixed and off-screen. */
+export function isGoneBySite(el: Element): boolean {
+  if (!el.isConnected) return true;
+  const cs = getComputedStyle(el);
+  if (cs.visibility === "hidden") return true;
+  for (let n: Element | null = el; n; n = parentOf(n)) {
+    const s = n === el ? cs : getComputedStyle(n);
+    if (s.display === "none" || Number(s.opacity) === 0) return true;
+  }
+  // display:contents has no box of its own, so a zero size says nothing about it.
+  if (cs.display !== "contents") {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return true;
+  }
+  if (cs.position === "fixed") {
+    const r = el.getBoundingClientRect();
+    const win = el.ownerDocument.defaultView ?? window;
+    if (r.right <= 0 || r.bottom <= 0 || r.left >= win.innerWidth || r.top >= win.innerHeight) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function ruleMatches(rules: CSSRuleList, el: Element): boolean {
+  for (const rule of rules) {
+    if (rule instanceof CSSStyleRule) {
+      try {
+        if (el.matches(rule.selectorText)) return true;
+      } catch {
+        // an invalid selector matches nothing
+      }
+    }
+    const nested = (rule as CSSGroupingRule).cssRules;
+    if (nested && ruleMatches(nested, el)) return true;
+  }
+  return false;
+}
+
+/** True when autoconsent's prehide or CSS-rules style, in the element's own root or the document, matches it. */
+export function autoconsentStyleTouches(el: Element): boolean {
+  const own = el.getRootNode();
+  const roots: ParentNode[] = [el.ownerDocument];
+  if (own instanceof ShadowRoot) roots.push(own);
+  for (const root of roots) {
+    for (const style of root.querySelectorAll<HTMLStyleElement>(AUTOCONSENT_STYLES)) {
+      let rules: CSSRuleList | undefined;
+      try {
+        rules = style.sheet?.cssRules;
+      } catch {
+        continue;
+      }
+      if (rules && ruleMatches(rules, el)) return true;
+    }
+  }
+  return false;
+}
+
+export interface VerifyOptions {
+  goneMs?: number;
+  stayMs?: number;
+  nav: NavigationWatch;
+}
+
+export interface VerifyResult {
+  ok: boolean;
+  reason?: "not_gone" | "came_back" | "navigation" | "autoconsent_style";
+}
+
+/**
+ * Phase one: every element gone within `goneMs`, else `not_gone`. Phase two: all stay gone
+ * for `stayMs`, else `came_back`. Navigation or a matching autoconsent style at any point
+ * ends it. Re-checks every 100 ms and on any DOM mutation.
+ */
+export async function verifyDismissed(els: Element[], o: VerifyOptions): Promise<VerifyResult> {
+  const goneMs = o.goneMs ?? VERIFY_GONE_MS;
+  const stayMs = o.stayMs ?? VERIFY_STAY_MS;
+  const doc = els[0]?.ownerDocument ?? document;
+  let wake: (() => void) | undefined;
+  const mo = new MutationObserver(() => wake?.());
+  mo.observe(doc, { subtree: true, childList: true, attributes: true });
+  const tick = () =>
+    new Promise<void>((resolve) => {
+      const t = setTimeout(done, POLL_MS);
+      function done() {
+        clearTimeout(t);
+        wake = undefined;
+        resolve();
+      }
+      wake = done;
+    });
+  const interrupted = (): VerifyResult | null => {
+    if (o.nav.started()) return { ok: false, reason: "navigation" };
+    if (els.some(autoconsentStyleTouches)) return { ok: false, reason: "autoconsent_style" };
+    return null;
+  };
+  try {
+    const t0 = performance.now();
+    for (;;) {
+      const stop = interrupted();
+      if (stop) return stop;
+      if (els.every(isGoneBySite)) break;
+      if (performance.now() - t0 >= goneMs) return { ok: false, reason: "not_gone" };
+      await tick();
+    }
+    const t1 = performance.now();
+    while (performance.now() - t1 < stayMs) {
+      await tick();
+      const stop = interrupted();
+      if (stop) return stop;
+      if (!els.every(isGoneBySite)) return { ok: false, reason: "came_back" };
+    }
+    return { ok: true };
+  } finally {
+    mo.disconnect();
+  }
+}
