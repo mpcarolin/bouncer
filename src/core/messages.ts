@@ -32,6 +32,43 @@ export type ToContent =
   | { type: "acOutcome"; outcome: Outcome }
   | { type: "restoreAcStyles" };
 
+const TO_BACKGROUND_TYPES: Record<ToBackground["type"], true> = {
+  hello: true,
+  claim: true,
+  ai: true,
+  log: true,
+  logPatch: true,
+  saveRule: true,
+  discardRule: true,
+};
+
+const TO_CONTENT_TYPES: Record<ToContent["type"], true> = {
+  acDetected: true,
+  acPopupFound: true,
+  acDetectionEnded: true,
+  acOutcome: true,
+  restoreAcStyles: true,
+};
+
+function hasKnownType(m: unknown, known: Record<string, true>): boolean {
+  if (typeof m !== "object" || m === null) return false;
+  const type = (m as { type?: unknown }).type;
+  return typeof type === "string" && Object.hasOwn(known, type);
+}
+
+/**
+ * True for Bouncer's own messages. Anything else on the same channel (autoconsent's protocol) is
+ * not ours. Only the `type` is checked, so a malformed Bouncer message still counts as ours.
+ */
+export function isToBackground(m: unknown): m is ToBackground {
+  return hasKnownType(m, TO_BACKGROUND_TYPES);
+}
+
+/** As `isToBackground`, for the background-to-content direction. */
+export function isToContent(m: unknown): m is ToContent {
+  return hasKnownType(m, TO_CONTENT_TYPES);
+}
+
 export interface AiReplies {
   status: AiStatus;
   isConsentDialog: AiResult<boolean>;
@@ -41,7 +78,7 @@ export interface AiReplies {
 
 interface Replies {
   hello: { enabled: boolean; settings: Settings; learnedRule?: LearnedRule };
-  claim: { granted: boolean; reason?: "autoconsent" | "already" };
+  claim: { granted: boolean; reason?: "autoconsent" | "already" | "stale" };
   log: { id: string };
   logPatch: void;
   saveRule: void;

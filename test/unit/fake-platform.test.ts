@@ -1,6 +1,11 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type { AiResult, AiStatus } from "../../src/core/ai.ts";
-import type { ReplyOf, ToBackground } from "../../src/core/messages.ts";
+import {
+  isToBackground,
+  isToContent,
+  type ReplyOf,
+  type ToBackground,
+} from "../../src/core/messages.ts";
 import type { Sender } from "../../src/core/platform.ts";
 import { fakeBackground, fakeContent } from "../helpers/fake-platform.ts";
 
@@ -8,7 +13,7 @@ describe("ReplyOf", () => {
   it("maps each message type to its reply", () => {
     expectTypeOf<ReplyOf<{ type: "claim" }>>().toEqualTypeOf<{
       granted: boolean;
-      reason?: "autoconsent" | "already";
+      reason?: "autoconsent" | "already" | "stale";
     }>();
     expectTypeOf<ReplyOf<{ type: "log"; entry: never }>>().toEqualTypeOf<{ id: string }>();
     expectTypeOf<ReplyOf<{ type: "ai"; op: "status"; args: [] }>>().toEqualTypeOf<AiStatus>();
@@ -17,6 +22,38 @@ describe("ReplyOf", () => {
     >();
     expectTypeOf<ReplyOf<{ type: "discardRule"; site: string }>>().toEqualTypeOf<void>();
     expectTypeOf<ReplyOf<ToBackground>>().not.toBeNever();
+  });
+});
+
+describe("message guards", () => {
+  it("recognise Bouncer's messages by type, and nothing else", () => {
+    for (const type of ["hello", "claim", "ai", "log", "logPatch", "saveRule", "discardRule"]) {
+      expect(isToBackground({ type })).toBe(true);
+    }
+    for (const type of [
+      "acDetected",
+      "acPopupFound",
+      "acDetectionEnded",
+      "acOutcome",
+      "restoreAcStyles",
+    ]) {
+      expect(isToContent({ type })).toBe(true);
+      expect(isToBackground({ type })).toBe(false);
+    }
+    // autoconsent's protocol shares the channel
+    for (const type of ["init", "initResp", "eval", "evalResp", "popupFound", "optOut", "report"]) {
+      expect(isToBackground({ type })).toBe(false);
+      expect(isToContent({ type })).toBe(false);
+    }
+    // inherited names are not types
+    for (const type of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      expect(isToBackground({ type })).toBe(false);
+      expect(isToContent({ type })).toBe(false);
+    }
+    for (const junk of [undefined, null, "hello", 7, [], {}, { type: 3 }]) {
+      expect(isToBackground(junk)).toBe(false);
+      expect(isToContent(junk)).toBe(false);
+    }
   });
 });
 
@@ -80,6 +117,30 @@ describe("fake platform", () => {
     await expect(fakeContent(bg).send({ type: "claim" })).rejects.toThrow();
     bg.removeTab(1);
     expect(removed).toEqual([]);
+  });
+
+  it("records opened pages with their query, and drops action/install handlers on restart", async () => {
+    const bg = fakeBackground();
+    const clicks: unknown[] = [];
+    const installs: string[] = [];
+    bg.onActionClicked((tab) => clicks.push(tab));
+    bg.onInstalled((reason) => installs.push(reason));
+    bg.clickAction({ url: "https://a.test/" });
+    bg.install("install");
+    await bg.openPage("settings", { site: "a.test" });
+    await bg.openPage("onboarding");
+    expect(clicks).toEqual([{ url: "https://a.test/" }]);
+    expect(installs).toEqual(["install"]);
+    expect(bg.opened).toEqual(["settings", "onboarding"]);
+    expect(bg.openedWith).toEqual([
+      { page: "settings", query: { site: "a.test" } },
+      { page: "onboarding", query: undefined },
+    ]);
+    bg.restart();
+    bg.clickAction({});
+    bg.install("update");
+    expect(clicks).toHaveLength(1);
+    expect(installs).toHaveLength(1);
   });
 
   it("KV stores copies, not references", async () => {

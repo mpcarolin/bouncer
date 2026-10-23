@@ -43,8 +43,14 @@ export interface FakeBackground extends BackgroundPlatform {
   restart(): void;
   /** Fire the registered `onTabRemoved` callbacks. */
   removeTab(tabId: number): void;
+  /** Fire the registered `onActionClicked` callbacks (the toolbar icon was clicked). */
+  clickAction(tab: { url?: string }): void;
+  /** Fire the registered `onInstalled` callbacks. */
+  install(reason: string): void;
   /** Pages passed to `openPage`, in order. */
   opened: PageName[];
+  /** The same calls with their query strings. */
+  openedWith: { page: PageName; query?: Record<string, string> }[];
   /** Main-world snippets run, in order; `mainWorldResult` is what they return. */
   mainWorldCalls: { tabId: number; frameId: number; snippetId: string }[];
   mainWorldResult: (snippetId: string) => unknown;
@@ -57,10 +63,13 @@ export interface FakeBackground extends BackgroundPlatform {
 export function fakeBackground(): FakeBackground {
   let messageHandler: MessageHandler | undefined;
   let tabRemovedHandlers: ((tabId: number) => void)[] = [];
+  let actionHandlers: ((tab: { url?: string }) => void)[] = [];
+  let installedHandlers: ((reason: string) => void)[] = [];
   const bg: FakeBackground = {
     local: new MemoryKV(),
     session: new MemoryKV(),
     opened: [],
+    openedWith: [],
     mainWorldCalls: [],
     mainWorldResult: () => undefined,
     contents: new Set(),
@@ -70,6 +79,12 @@ export function fakeBackground(): FakeBackground {
     onTabRemoved(cb) {
       tabRemovedHandlers.push(cb);
     },
+    onActionClicked(cb) {
+      actionHandlers.push(cb);
+    },
+    onInstalled(cb) {
+      installedHandlers.push(cb);
+    },
     async sendToFrame(tabId, frameId, msg) {
       const target = [...bg.contents].find(
         (c) => c.sender.tabId === tabId && c.sender.frameId === frameId,
@@ -78,8 +93,9 @@ export function fakeBackground(): FakeBackground {
       const copy = structuredClone(msg);
       for (const h of target.handlers) h(copy);
     },
-    async openPage(p) {
+    async openPage(p, query) {
       bg.opened.push(p);
+      bg.openedWith.push({ page: p, query: query && { ...query } });
     },
     async runInMainWorld(tabId, frameId, snippetId) {
       bg.mainWorldCalls.push({ tabId, frameId, snippetId });
@@ -88,9 +104,17 @@ export function fakeBackground(): FakeBackground {
     restart() {
       messageHandler = undefined;
       tabRemovedHandlers = [];
+      actionHandlers = [];
+      installedHandlers = [];
     },
     removeTab(tabId) {
       for (const cb of tabRemovedHandlers) cb(tabId);
+    },
+    clickAction(tab) {
+      for (const cb of actionHandlers) cb({ ...tab });
+    },
+    install(reason) {
+      for (const cb of installedHandlers) cb(reason);
     },
     async deliver(msg, from) {
       // Like Chrome, a message with no listener rejects.

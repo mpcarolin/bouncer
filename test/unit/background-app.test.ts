@@ -1,0 +1,548 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AiMeta, AiProvider } from "../../src/core/ai.ts";
+import { startBackground } from "../../src/core/background-app.ts";
+import { MAX_MODEL_CALLS_PER_PAGE } from "../../src/core/config.ts";
+import type { LogEntry } from "../../src/core/log.ts";
+import { DEFAULT_SETTINGS, saveSettings } from "../../src/core/settings.ts";
+import type { SerialisedBanner } from "../../src/core/types.ts";
+import { type FakeBackground, fakeBackground, fakeContent } from "../helpers/fake-platform.ts";
+
+afterEach(() => vi.restoreAllMocks());
+
+const META: AiMeta = { ms: 3, cold: false, onDevice: true };
+const banner: SerialisedBanner = { text: "We use cookies", controls: [] };
+
+/** A provider that counts the model calls that reach it. */
+function countingProvider() {
+  const calls = { model: 0, status: 0 };
+  const provider: AiProvider = {
+    status: async () => {
+      calls.status++;
+      return { state: "available", onDevice: true };
+    },
+    isConsentDialog: async () => {
+      calls.model++;
+      return { kind: "answer", value: true, meta: META };
+    },
+    labelControls: async () => {
+      calls.model++;
+      return { kind: "answer", value: {}, meta: META };
+    },
+    corroborate: async () => {
+      calls.model++;
+      return { kind: "answer", value: true, meta: META };
+    },
+  };
+  return { provider, calls };
+}
+
+function started(over: Parameters<typeof startBackground>[2] = {}) {
+  const bg = fakeBackground();
+  const { provider, calls } = countingProvider();
+  const app = startBackground(bg, provider, over);
+  return { bg, app, calls, provider };
+}
+
+const entry = (site: string): Omit<LogEntry, "id"> => ({
+  at: Date.now(),
+  site,
+  url: `https://${site}/`,
+  path: "heuristic",
+  clicked: [],
+  toggles: [],
+  t: {},
+  modelCalls: [],
+  outcome: "unsure",
+  notes: [],
+});
+
+describe("hello", () => {
+  it("from the top frame records the document: a new document resets the page's claim", async () => {
+    const { bg, app } = started();
+    const top = fakeContent(bg, { tabId: 1, frameId: 0, documentId: "d1" });
+    await top.send({ type: "hello" });
+    expect(await top.send({ type: "claim" })).toEqual({ granted: true });
+    expect(await app.arbiter.owner(1)).toBe("bouncer");
+
+    top.sender.documentId = "d2"; // the tab navigated
+    await top.send({ type: "hello" });
+    expect(await app.arbiter.owner(1)).toBe("none");
+    expect(await top.send({ type: "claim" })).toEqual({ granted: true });
+  });
+
+  it("repeated for the same document leaves its claim alone", async () => {
+    const { bg } = started();
+    const top = fakeContent(bg, { documentId: "d1" });
+    await top.send({ type: "hello" });
+    await top.send({ type: "claim" });
+    await top.send({ type: "hello" });
+    expect(await top.send({ type: "claim" })).toEqual({ granted: false, reason: "already" });
+  });
+
+  it("from a child frame does not touch the page's state", async () => {
+    const { bg } = started();
+    const top = fakeContent(bg, { tabId: 1, frameId: 0, documentId: "d1" });
+    const child = fakeContent(bg, { tabId: 1, frameId: 3, documentId: "child-doc" });
+    await top.send({ type: "hello" });
+    await top.send({ type: "claim" });
+    await child.send({ type: "hello" });
+    expect(await top.send({ type: "claim" })).toEqual({ granted: false, reason: "already" });
+  });
+
+  it("replies with the settings, the verdict for the sender's URL, and no learned rule yet", async () => {
+    const { bg } = started();
+    await saveSettings(bg.local, { ...DEFAULT_SETTINGS, disabledSites: ["off.example"] });
+    const on = await fakeContent(bg, { url: "https://on.example/page" }).send({ type: "hello" });
+    expect(on).toEqual({
+      enabled: true,
+      settings: { ...DEFAULT_SETTINGS, disabledSites: ["off.example"] },
+      learnedRule: undefined,
+    });
+    const off = await fakeContent(bg, { url: "https://www.off.example/" }).send({ type: "hello" });
+    expect(off.enabled).toBe(false);
+  });
+
+  it("replies enabled: false everywhere when Bouncer is switched off globally", async () => {
+    const { bg } = started();
+    await saveSettings(bg.local, { ...DEFAULT_SETTINGS, enabled: false });
+    const reply = await fakeContent(bg).send({ type: "hello" });
+    expect(reply.enabled).toBe(false);
+    expect(reply.settings.enabled).toBe(false);
+  });
+
+  it("still records the document when the site is disabled", async () => {
+    const { bg, app } = started();
+    await saveSettings(bg.local, { ...DEFAULT_SETTINGS, disabledSites: ["example.com"] });
+    const top = fakeContent(bg, { documentId: "d1" });
+    expect((await top.send({ type: "hello" })).enabled).toBe(false);
+    expect(await app.arbiter.claimForBouncer(1, "d1")).toEqual({ granted: true });
+  });
+
+  it("from a sender with no tab stands down and leaves no state behind", async () => {
+    const { bg } = started();
+    const page = fakeContent(bg, { tabId: -1, frameId: -1, documentId: "ext-doc" });
+    const reply = await page.send({ type: "hello" });
+    expect(reply.enabled).toBe(false);
+    expect(reply.settings).toEqual(DEFAULT_SETTINGS);
+    expect(await bg.session.get("arb:-1")).toBeUndefined();
+  });
+});
+
+describe("claim", () => {
+  it("before any hello, or from a document that is no longer the page's, is stale", async () => {
+    const { bg } = started();
+    const top = fakeContent(bg, { documentId: "d1" });
+    expect(await top.send({ type: "claim" })).toEqual({ granted: false, reason: "stale" });
+    await top.send({ type: "hello" });
+    top.sender.documentId = "d2";
+    await top.send({ type: "hello" });
+    top.sender.documentId = "d1"; // a message from the previous page, arriving late
+    expect(await top.send({ type: "claim" })).toEqual({ granted: false, reason: "stale" });
+    top.sender.documentId = "d2";
+    expect(await top.send({ type: "claim" })).toEqual({ granted: true });
+  });
+
+  it("from a child frame is stale: only the top document can be claimed", async () => {
+    const { bg } = started();
+    const top = fakeContent(bg, { frameId: 0, documentId: "d1" });
+    const child = fakeContent(bg, { frameId: 2, documentId: "child-doc" });
+    await top.send({ type: "hello" });
+    expect(await child.send({ type: "claim" })).toEqual({ granted: false, reason: "stale" });
+    expect(await top.send({ type: "claim" })).toEqual({ granted: true });
+  });
+
+  it("from a sender with no tab is stale and records nothing", async () => {
+    const { bg } = started();
+    const page = fakeContent(bg, { tabId: -1, frameId: -1, documentId: "ext-doc" });
+    expect(await page.send({ type: "claim" })).toEqual({ granted: false, reason: "stale" });
+    expect(await bg.session.get("arb:-1")).toBeUndefined();
+  });
+
+  it("is atomic: of two simultaneous claims for one page, exactly one is granted", async () => {
+    const { bg } = started();
+    const top = fakeContent(bg, { documentId: "d1" });
+    await top.send({ type: "hello" });
+    const replies = await Promise.all([top.send({ type: "claim" }), top.send({ type: "claim" })]);
+    expect(replies.filter((r) => r.granted)).toHaveLength(1);
+    expect(replies.find((r) => !r.granted)?.reason).toBe("already");
+  });
+
+  it("is remembered across a service-worker restart", async () => {
+    const { bg } = started();
+    const top = fakeContent(bg, { documentId: "d1" });
+    await top.send({ type: "hello" });
+    await top.send({ type: "claim" });
+    bg.restart();
+    startBackground(bg, countingProvider().provider);
+    expect(await top.send({ type: "claim" })).toEqual({ granted: false, reason: "already" });
+  });
+});
+
+describe("ai", () => {
+  const ask = (c: ReturnType<typeof fakeContent>) =>
+    c.send({ type: "ai", op: "isConsentDialog", args: [banner] });
+
+  it("serves each op through the provider", async () => {
+    const { bg } = started();
+    const top = fakeContent(bg);
+    expect(await top.send({ type: "ai", op: "status", args: [] })).toEqual({
+      state: "available",
+      onDevice: true,
+    });
+    expect(await ask(top)).toEqual({ kind: "answer", value: true, meta: META });
+    expect(await top.send({ type: "ai", op: "labelControls", args: [banner, [0]] })).toEqual({
+      kind: "answer",
+      value: {},
+      meta: META,
+    });
+  });
+
+  it("allows 8 model calls on a page, then answers budget_exhausted without reaching the model", async () => {
+    const { bg, calls } = started();
+    const top = fakeContent(bg, { documentId: "d1" });
+    for (let i = 0; i < MAX_MODEL_CALLS_PER_PAGE; i++) {
+      expect((await ask(top)).kind).toBe("answer");
+    }
+    const ninth = await ask(top);
+    expect(ninth).toMatchObject({ kind: "error", error: "budget_exhausted" });
+    expect(calls.model).toBe(MAX_MODEL_CALLS_PER_PAGE);
+  });
+
+  it("does not count status against the budget, and still answers it when the budget is spent", async () => {
+    const { bg, calls } = started();
+    const top = fakeContent(bg);
+    for (let i = 0; i < MAX_MODEL_CALLS_PER_PAGE + 1; i++) await ask(top);
+    expect(await top.send({ type: "ai", op: "status", args: [] })).toMatchObject({
+      state: "available",
+    });
+    expect(calls.status).toBe(1);
+  });
+
+  it("gives a new top document a fresh budget", async () => {
+    const { bg, calls } = started();
+    const top = fakeContent(bg, { documentId: "d1" });
+    await top.send({ type: "hello" });
+    for (let i = 0; i < MAX_MODEL_CALLS_PER_PAGE; i++) await ask(top);
+    expect(await ask(top)).toMatchObject({ error: "budget_exhausted" });
+
+    top.sender.documentId = "d2";
+    await top.send({ type: "hello" });
+    expect((await ask(top)).kind).toBe("answer");
+    expect(calls.model).toBe(MAX_MODEL_CALLS_PER_PAGE + 1);
+  });
+
+  it("keeps a document's budget through a repeated hello, but forgets it once the next document says hello", async () => {
+    const { bg } = started();
+    const top = fakeContent(bg, { documentId: "d1" });
+    await top.send({ type: "hello" });
+    for (let i = 0; i < MAX_MODEL_CALLS_PER_PAGE; i++) await ask(top);
+    await top.send({ type: "hello" });
+    expect(await ask(top)).toMatchObject({ error: "budget_exhausted" });
+
+    const next = fakeContent(bg, { documentId: "d2" });
+    await next.send({ type: "hello" });
+    // d1 is gone: nothing of it is kept, so a straggler from it starts from scratch.
+    expect((await ask(top)).kind).toBe("answer");
+  });
+
+  it("keeps a budget per tab", async () => {
+    const { bg } = started();
+    const a = fakeContent(bg, { tabId: 1, documentId: "d1" });
+    const b = fakeContent(bg, { tabId: 2, documentId: "d1" });
+    for (let i = 0; i < MAX_MODEL_CALLS_PER_PAGE; i++) await ask(a);
+    expect(await ask(a)).toMatchObject({ error: "budget_exhausted" });
+    expect((await ask(b)).kind).toBe("answer");
+  });
+
+  it("drops a tab's budget when the tab is removed", async () => {
+    const { bg } = started();
+    const top = fakeContent(bg, { tabId: 4, documentId: "d1" });
+    for (let i = 0; i < MAX_MODEL_CALLS_PER_PAGE; i++) await ask(top);
+    expect(await ask(top)).toMatchObject({ error: "budget_exhausted" });
+    bg.removeTab(4);
+    expect((await ask(top)).kind).toBe("answer");
+  });
+
+  it("refuses model ops from a child frame with not_top_frame, spending nothing", async () => {
+    const { bg, calls } = started();
+    const child = fakeContent(bg, { tabId: 1, frameId: 5, documentId: "child-doc" });
+    expect(await ask(child)).toMatchObject({ kind: "error", error: "not_top_frame" });
+    expect(
+      await child.send({ type: "ai", op: "labelControls", args: [banner, [0]] }),
+    ).toMatchObject({ kind: "error", error: "not_top_frame" });
+    expect(calls.model).toBe(0);
+    // ...and it didn't take anything from the top frame's budget.
+    const top = fakeContent(bg, { tabId: 1, frameId: 0, documentId: "d1" });
+    for (let i = 0; i < MAX_MODEL_CALLS_PER_PAGE; i++) {
+      expect((await ask(top)).kind).toBe("answer");
+    }
+  });
+
+  it("serves status to a child frame, and to a sender with no tab", async () => {
+    const { bg } = started();
+    const child = fakeContent(bg, { frameId: 5 });
+    const ext = fakeContent(bg, { tabId: -1, frameId: -1, documentId: "ext-doc" });
+    for (const c of [child, ext]) {
+      expect(await c.send({ type: "ai", op: "status", args: [] })).toMatchObject({
+        state: "available",
+      });
+    }
+  });
+
+  it("refuses model ops from a sender with no tab", async () => {
+    const { bg, calls } = started();
+    const ext = fakeContent(bg, { tabId: -1, frameId: -1, documentId: "ext-doc" });
+    expect(await ask(ext)).toMatchObject({ kind: "error", error: "no_tab" });
+    expect(calls.model).toBe(0);
+  });
+
+  it("replies with an error result for an unknown op instead of throwing", async () => {
+    const { bg } = started();
+    const reply = await fakeContent(bg).send({ type: "ai", op: "dance", args: [] } as never);
+    expect(reply).toMatchObject({ kind: "error", error: "unknown_op" });
+  });
+
+  it("replies with an error result when the provider throws", async () => {
+    const bg = fakeBackground();
+    const provider: AiProvider = {
+      ...countingProvider().provider,
+      isConsentDialog: async () => {
+        throw new Error("model fell over");
+      },
+    };
+    startBackground(bg, provider);
+    expect(await ask(fakeContent(bg))).toMatchObject({ kind: "error", error: "model fell over" });
+  });
+});
+
+describe("log and logPatch", () => {
+  it("adds an entry, returns its id, and patches it", async () => {
+    const { bg, app } = started();
+    const top = fakeContent(bg);
+    const { id } = await top.send({ type: "log", entry: entry("a.example") });
+    await top.send({ type: "logPatch", id, patch: { outcome: "dismissed", t: { gone: 900 } } });
+    const [saved] = await app.log.list();
+    expect(saved).toMatchObject({ id, site: "a.example", outcome: "dismissed", t: { gone: 900 } });
+  });
+
+  it("serialises simultaneous writes, so none is lost", async () => {
+    const { bg, app } = started();
+    const top = fakeContent(bg);
+    await Promise.all(
+      Array.from({ length: 12 }, (_, i) =>
+        top.send({ type: "log", entry: entry(`s${i}.example`) }),
+      ),
+    );
+    expect(await app.log.list()).toHaveLength(12);
+  });
+
+  it("keeps the log in local storage, which survives a browser restart", async () => {
+    const { bg } = started();
+    await fakeContent(bg).send({ type: "log", entry: entry("a.example") });
+    expect(await bg.local.get("decisionLog")).toHaveLength(1);
+    expect(await bg.session.get("decisionLog")).toBeUndefined();
+  });
+});
+
+describe("saveRule and discardRule", () => {
+  // Stubs until Task 20 (learned rules): they acknowledge and store nothing.
+  it("reply with nothing", async () => {
+    const { bg } = started();
+    const top = fakeContent(bg);
+    expect(await top.send({ type: "saveRule", rule: {} })).toBeUndefined();
+    expect(await top.send({ type: "discardRule", site: "a.example" })).toBeUndefined();
+  });
+});
+
+describe("the message handler's contract with the platform", () => {
+  const from = { tabId: 1, frameId: 0, documentId: "d1", url: "https://example.com/" };
+
+  function handlerOf() {
+    const bg = fakeBackground();
+    let handler: Parameters<FakeBackground["onMessage"]>[0] | undefined;
+    const register = bg.onMessage;
+    bg.onMessage = (h) => {
+      handler = h;
+      register(h);
+    };
+    startBackground(bg, countingProvider().provider);
+    if (!handler) throw new Error("no message handler registered");
+    return handler;
+  }
+
+  it("returns undefined, not a promise, when there is nothing to wait for", () => {
+    const handle = handlerOf();
+    expect(handle({ type: "saveRule", rule: {} }, from)).toBeUndefined();
+    expect(handle({ type: "discardRule", site: "a.example" }, from)).toBeUndefined();
+    expect(handle({ type: "popupFound", cmp: "onetrust" }, from)).toBeUndefined();
+  });
+
+  it("returns a promise when there is a reply to wait for", async () => {
+    const handle = handlerOf();
+    for (const msg of [
+      { type: "hello" },
+      { type: "claim" },
+      { type: "ai", op: "status", args: [] },
+    ]) {
+      const reply = handle(msg, from);
+      expect(reply).toBeInstanceOf(Promise);
+      await reply;
+    }
+  });
+});
+
+describe("tab removal", () => {
+  it("forgets the tab's arbiter state, and only on removal", async () => {
+    const { bg, app } = started();
+    const forget = vi.spyOn(app.arbiter, "forget");
+    const top = fakeContent(bg, { tabId: 3, documentId: "d1" });
+    await top.send({ type: "hello" });
+    await top.send({ type: "claim" });
+    top.sender.documentId = "d2"; // navigation is not removal
+    await top.send({ type: "hello" });
+    expect(forget).not.toHaveBeenCalled();
+
+    bg.removeTab(3);
+    expect(forget).toHaveBeenCalledExactlyOnceWith(3);
+    expect(await app.arbiter.owner(3)).toBe("none");
+    expect(await bg.session.get("arb:3")).toBeUndefined();
+  });
+
+  it("logs a failure to forget instead of throwing", async () => {
+    const { bg, app } = started();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(app.arbiter, "forget").mockRejectedValue(new Error("storage gone"));
+    bg.removeTab(3);
+    await vi.waitFor(() => expect(error).toHaveBeenCalled());
+  });
+});
+
+describe("toolbar icon and install", () => {
+  it("opens settings for the active tab's site", async () => {
+    const { bg } = started();
+    bg.clickAction({ url: "https://news.example.com/story?id=1" });
+    expect(bg.openedWith).toEqual([{ page: "settings", query: { site: "news.example.com" } }]);
+  });
+
+  it("opens settings with no site when there is no usable URL", async () => {
+    const { bg } = started();
+    for (const url of [undefined, "", "not a url", "about:blank", "chrome://extensions/"]) {
+      bg.clickAction({ url });
+    }
+    expect(bg.openedWith).toHaveLength(5);
+    for (const call of bg.openedWith) expect(call).toEqual({ page: "settings", query: undefined });
+  });
+
+  it("opens onboarding on install, and on nothing else", async () => {
+    const { bg } = started();
+    bg.install("update");
+    bg.install("chrome_update");
+    expect(bg.opened).toEqual([]);
+    bg.install("install");
+    expect(bg.opened).toEqual(["onboarding"]);
+    expect(bg.openedWith[0]?.query).toBeUndefined();
+  });
+
+  it("logs a failure to open a page instead of throwing", async () => {
+    const { bg } = started();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    bg.openPage = () => Promise.reject(new Error("no tabs"));
+    bg.install("install");
+    bg.clickAction({ url: "https://a.example/" });
+    await vi.waitFor(() => expect(error).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe("autoconsent messages", () => {
+  const popupFound = { type: "popupFound", cmp: "onetrust" };
+
+  it("reply at once and touch none of Bouncer's state when no handler is plugged in", async () => {
+    const { bg, app } = started();
+    const top = fakeContent(bg, { documentId: "d1" });
+    await top.send({ type: "hello" });
+    const before = structuredClone(await bg.session.get("arb:1"));
+    expect(await top.send(popupFound as never)).toBeUndefined();
+    expect(await bg.session.get("arb:1")).toEqual(before);
+    expect(await app.log.list()).toEqual([]);
+  });
+
+  it("are delegated to the plugged-in handler with the message and its sender", async () => {
+    const seen: { msg: unknown; from: unknown }[] = [];
+    const { bg } = started({
+      autoconsent: async (msg, from) => {
+        seen.push({ msg, from });
+      },
+    });
+    const frame = fakeContent(bg, {
+      tabId: 6,
+      frameId: 2,
+      documentId: "f",
+      url: "https://x.test/",
+    });
+    expect(await frame.send(popupFound as never)).toBeUndefined();
+    expect(seen).toEqual([
+      { msg: popupFound, from: { tabId: 6, frameId: 2, documentId: "f", url: "https://x.test/" } },
+    ]);
+  });
+
+  it("are not held up by a slow handler: the reply comes at once", async () => {
+    let finish: () => void = () => {};
+    const { bg } = started({
+      autoconsent: () => new Promise<void>((resolve) => (finish = resolve)),
+    });
+    expect(await fakeContent(bg).send(popupFound as never)).toBeUndefined();
+    finish();
+  });
+
+  it("still reply when the handler throws or rejects, and the failure is logged", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    let n = 0;
+    const { bg } = started({
+      autoconsent: () => {
+        if (n++ === 0) throw new Error("sync");
+        return Promise.reject(new Error("async"));
+      },
+    });
+    const frame = fakeContent(bg);
+    expect(await frame.send(popupFound as never)).toBeUndefined();
+    expect(await frame.send(popupFound as never)).toBeUndefined();
+    await vi.waitFor(() => expect(error).toHaveBeenCalledTimes(2));
+  });
+
+  it("also covers messages that are not objects at all", async () => {
+    const seen: unknown[] = [];
+    const { bg } = started({ autoconsent: (msg) => void seen.push(msg) });
+    const frame = fakeContent(bg);
+    expect(await frame.send(undefined as never)).toBeUndefined();
+    expect(await frame.send("hello" as never)).toBeUndefined();
+    expect(seen).toEqual([undefined, "hello"]);
+  });
+});
+
+describe("a failing message", () => {
+  function brokenStorage(bg: FakeBackground) {
+    vi.spyOn(bg.local, "get").mockRejectedValue(new Error("disk full"));
+    vi.spyOn(bg.local, "set").mockRejectedValue(new Error("disk full"));
+  }
+
+  it("still gets a reply, so the content script's promise settles", async () => {
+    const { bg } = started();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    brokenStorage(bg);
+    const top = fakeContent(bg);
+    expect(await top.send({ type: "hello" })).toBeUndefined();
+    expect(await top.send({ type: "log", entry: entry("a.example") })).toBeUndefined();
+    expect(await top.send({ type: "logPatch", id: "x", patch: {} })).toBeUndefined();
+    expect(error).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not stop later messages from being served", async () => {
+    const { bg } = started();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const get = vi.spyOn(bg.local, "get").mockRejectedValueOnce(new Error("blip"));
+    const top = fakeContent(bg);
+    expect(await top.send({ type: "hello" })).toBeUndefined();
+    get.mockRestore();
+    expect((await top.send({ type: "hello" })).enabled).toBe(true);
+  });
+});
