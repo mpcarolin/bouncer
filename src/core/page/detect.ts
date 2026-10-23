@@ -11,7 +11,9 @@ export interface Candidate {
   key: string;
 }
 
-const CONSENT_TEXT = /cookie|consent|privacy|datenschutz|confidentialit|privacidad/i;
+/** Wording that marks consent text on its own. "Privacy" is not in it: a newsletter modal has it too. */
+export const CONSENT_WORDING = /cookie|consent|datenschutz|confidentialit|privacidad/i;
+const CONSENT_TEXT = new RegExp(`${CONSENT_WORDING.source}|privacy`, "i");
 const Z_INDEX_MIN = 1000;
 const MODAL_COVERAGE = 0.5;
 
