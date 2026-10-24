@@ -128,7 +128,11 @@ export const NEEDS_CORROBORATION: ReadonlySet<Label> = new Set<Label>([
 /** `unsure` reasons that come from the model, not from the controls (a corroboration's, say). */
 export const MODEL_REASONS: ReadonlySet<string> = new Set(["model_timeout", "model_error"]);
 
-/** `choose`, with §2e's corroboration of any AI-only reject, save or settings target. */
+/**
+ * `choose`, with §2e's corroboration of any AI-only reject, save or settings target. `labels` are
+ * the ones the decision was made on: a denied label demoted to `other`, a confirmed one marked
+ * `corroborated`. The caller's map is left as it was.
+ */
 export async function decide(
   b: SerialisedBanner,
   labels: Map<number, Labelled>,
@@ -138,13 +142,14 @@ export async function decide(
   decision: Decision;
   aiOnlyClick: boolean;
   corroborations: { id: number; answer: Corroboration }[];
+  labels: Map<number, Labelled>;
 }> {
   const current = new Map(labels);
   const corroborations: { id: number; answer: Corroboration }[] = [];
   const asked = new Set<number>();
   const done = (decision: Decision) => {
     const target = "target" in decision ? current.get(decision.target) : undefined;
-    return { decision, aiOnlyClick: target?.source === "ai", corroborations };
+    return { decision, aiOnlyClick: target?.source === "ai", corroborations, labels: current };
   };
 
   // Each pass either returns or demotes one never-asked control, so this bound is never reached.
@@ -168,7 +173,12 @@ export async function decide(
     corroborations.push({ id: control.id, answer });
     if (answer === "timeout" || answer === "error") {
       const reason = answer === "timeout" ? "model_timeout" : "model_error";
-      return { decision: { kind: "unsure", reason }, aiOnlyClick: false, corroborations };
+      return {
+        decision: { kind: "unsure", reason },
+        aiOnlyClick: false,
+        corroborations,
+        labels: current,
+      };
     }
     current.set(
       control.id,

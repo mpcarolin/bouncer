@@ -507,6 +507,8 @@ export class OwnPath {
     const res = await decide(banner, merged, opts, (control, label) =>
       this.corroborate(r, banner, control, label),
     );
+    // The labels the decision was made on, after corroboration, not the ones it started from.
+    r.entry.labels = Object.fromEntries(res.labels);
     for (const { id, answer } of res.corroborations)
       r.entry.notes.push(`corroborate:${id}:${answer}`);
     const decision = res.decision;

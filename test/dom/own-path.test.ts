@@ -425,7 +425,8 @@ describe("OwnPath, stage 1", () => {
     const e = await h.path.done;
     expect(e).toMatchObject({ outcome: "unsure", reason: "no_usable_control", clicked: [] });
     expect(h.provider.calls).toEqual(["isConsentDialog", "labelControls", "corroborate"]);
-    expect(e.labels?.[1]).toMatchObject({ label: "reject", source: "ai" });
+    // The label logged is the one the chooser was left with: corroboration demoted it.
+    expect(e.labels?.[1]).toEqual({ label: "other", source: "ai" });
     expect(e.notes).toContain("corroborate:1:false");
     expect(h.clicks).toEqual([]);
     expect(window.__clicked).toBeUndefined();
@@ -453,6 +454,7 @@ describe("OwnPath, stage 1", () => {
     expect(gone).toBeGreaterThanOrEqual(decided as number);
     expect(gone).toBeLessThanOrEqual(Date.now());
     expect(window.__clicked).toBe("proceed");
+    expect(e.labels?.[1]).toEqual({ label: "reject", source: "ai", corroborated: true });
     // What the background stored is what `done` reports.
     expect(await h.entries()).toEqual([e]);
   });

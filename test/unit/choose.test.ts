@@ -184,6 +184,21 @@ describe("decide", () => {
     expect(r.corroborations).toEqual([{ id: 0, answer: false }]);
   });
 
+  test("returns the labels it decided on: denied ones demoted, confirmed ones marked", async () => {
+    const { banner, labels } = labelled([btn("Proceed"), btn("Go on"), btn("Reject all")], {
+      0: "reject",
+      1: "reject",
+    });
+    const corroborate = vi.fn(async (c: Control) => c.id === 1);
+    const r = await decide(banner, labels, DEFAULTS, corroborate);
+    expect(r.decision).toEqual({ kind: "reject", target: 1 });
+    expect(r.labels.get(0)).toEqual({ label: "other", source: "ai" });
+    expect(r.labels.get(1)).toEqual({ label: "reject", source: "ai", corroborated: true });
+    expect(r.labels.get(2)).toEqual(labels.get(2));
+    // The caller's map is left as it was.
+    expect(labels.get(0)).toEqual({ label: "reject", source: "ai" });
+  });
+
   test("two AI labels both denied end without looping", async () => {
     const { banner, labels } = labelled([btn("Proceed"), btn("Go on")], {
       0: "reject",
