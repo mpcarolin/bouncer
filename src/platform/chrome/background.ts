@@ -36,12 +36,14 @@ export function chromeAcLib(): AcLib {
  * Chrome's sender, as Bouncer's. A sender with no tab (a popup or an offscreen document) gets
  * tabId -1, and one with no frame gets frameId -1, so it can never pass for a page's top frame
  * (frameId 0). `url` is the frame's own and `tabUrl` the tab's; each falls back to the other.
+ * Chrome names the lifecycle of every document that sends; a sender with none is no prerender.
  */
 function toSender(s: chrome.runtime.MessageSender): Sender {
   return {
     tabId: s.tab?.id ?? -1,
     frameId: s.frameId ?? -1,
     documentId: s.documentId ?? "",
+    documentLifecycle: s.documentLifecycle ?? "active",
     url: s.url ?? s.tab?.url ?? "",
     tabUrl: s.tab?.url ?? s.url ?? "",
   };
@@ -104,12 +106,16 @@ export function chromeBackground(): BackgroundPlatform {
 
     openPage: openExtensionPage,
 
-    /** autoconsent's `eval` rule steps run its own snippets, so the page's JS never chooses the code. */
-    async runInMainWorld(tabId, frameId, snippetId) {
+    /**
+     * autoconsent's `eval` rule steps run its own snippets, so the page's JS never chooses the
+     * code. Aimed at the document, not the frame: a frame's next document never runs its last
+     * one's eval.
+     */
+    async runInMainWorld(tabId, documentId, snippetId) {
       const snippet = (evalSnippets as Record<string, (() => unknown) | undefined>)[snippetId];
       if (!snippet) throw new Error(`unknown autoconsent eval snippet: ${snippetId}`);
       const [frame] = await chrome.scripting.executeScript({
-        target: { tabId, frameIds: [frameId] },
+        target: { tabId, documentIds: [documentId] },
         world: "MAIN",
         func: snippet,
       });

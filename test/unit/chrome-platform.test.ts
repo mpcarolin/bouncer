@@ -55,6 +55,7 @@ describe("chromeBackground.onMessage", () => {
         tab: { id: 7, url: "https://tab.example/" },
         frameId: 3,
         documentId: "doc-9",
+        documentLifecycle: "prerender",
         url: "https://frame.example/x",
       },
     );
@@ -65,6 +66,7 @@ describe("chromeBackground.onMessage", () => {
           tabId: 7,
           frameId: 3,
           documentId: "doc-9",
+          documentLifecycle: "prerender",
           url: "https://frame.example/x",
           tabUrl: "https://tab.example/",
         },
@@ -85,6 +87,8 @@ describe("chromeBackground.onMessage", () => {
         tabId: -1,
         frameId: -1,
         documentId: "",
+        // Chrome names a lifecycle for every document; a sender without one is no prerender.
+        documentLifecycle: "active",
         url: "chrome-extension://fake-extension-id/popup.html",
         tabUrl: "chrome-extension://fake-extension-id/popup.html",
       },
@@ -216,25 +220,26 @@ describe("chromeBackground events and actions", () => {
     expect(params.get("site")).toBe("a&b=c d");
   });
 
-  it("runInMainWorld runs the snippet in the frame's main world and returns its result", async () => {
+  it("runInMainWorld runs the snippet in that document's main world, wherever it is now, and returns its result", async () => {
     const fc = installFakeChrome();
     fc.scriptResult = true;
-    expect(await chromeBackground().runInMainWorld(8, 2, "EVAL_0")).toBe(true);
+    expect(await chromeBackground().runInMainWorld(8, "doc-3", "EVAL_0")).toBe(true);
+    // By document, not by frame: a frame's next document never runs a snippet meant for its last.
     expect(fc.scripts).toEqual([
-      { target: { tabId: 8, frameIds: [2] }, world: "MAIN", func: evalSnippets.EVAL_0 },
+      { target: { tabId: 8, documentIds: ["doc-3"] }, world: "MAIN", func: evalSnippets.EVAL_0 },
     ]);
   });
 
-  it("runInMainWorld returns undefined when the frame reports nothing, and rejects on an unknown snippet or a failed injection", async () => {
+  it("runInMainWorld returns undefined when the document reports nothing, and rejects on an unknown snippet or a failed injection", async () => {
     const fc = installFakeChrome();
     const bg = chromeBackground();
     fc.scriptResults = [];
-    expect(await bg.runInMainWorld(1, 0, "EVAL_0")).toBeUndefined();
+    expect(await bg.runInMainWorld(1, "doc-1", "EVAL_0")).toBeUndefined();
     const before = fc.scripts.length;
-    await expect(bg.runInMainWorld(1, 0, "NOT_A_SNIPPET")).rejects.toThrow("NOT_A_SNIPPET");
+    await expect(bg.runInMainWorld(1, "doc-1", "NOT_A_SNIPPET")).rejects.toThrow("NOT_A_SNIPPET");
     expect(fc.scripts).toHaveLength(before);
     fc.scriptError = new Error("Cannot access contents of the page");
-    await expect(bg.runInMainWorld(1, 0, "EVAL_0")).rejects.toThrow("Cannot access");
+    await expect(bg.runInMainWorld(1, "doc-1", "EVAL_0")).rejects.toThrow("Cannot access");
   });
 });
 

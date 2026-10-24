@@ -5,6 +5,7 @@ import { startBackground } from "../../src/core/background-app.ts";
 import { MAX_MODEL_CALLS_PER_PAGE } from "../../src/core/config.ts";
 import type { LearnedRule } from "../../src/core/learned.ts";
 import type { LogEntry } from "../../src/core/log.ts";
+import type { Sender } from "../../src/core/platform.ts";
 import { DEFAULT_SETTINGS, saveSettings } from "../../src/core/settings.ts";
 import type { SerialisedBanner } from "../../src/core/types.ts";
 import { type FakeBackground, fakeBackground, fakeContent } from "../helpers/fake-platform.ts";
@@ -477,10 +478,11 @@ describe("saveRule and discardRule", () => {
 });
 
 describe("the message handler's contract with the platform", () => {
-  const from = {
+  const from: Sender = {
     tabId: 1,
     frameId: 0,
     documentId: "d1",
+    documentLifecycle: "active",
     url: "https://example.com/",
     tabUrl: "https://example.com/",
   };
@@ -640,6 +642,53 @@ describe("autoconsent messages", () => {
     await vi.waitFor(async () =>
       expect(await app.log.list()).toMatchObject([{ path: "autoconsent", outcome: "working" }]),
     );
+  });
+
+  it("of a prerendered page wait for Bouncer's hello once it is shown, and are then answered as its top frame's", async () => {
+    const { acLib, asked } = recordingLib();
+    const { bg, app } = started({ acLib });
+    const shownPage = fakeContent(bg, { tabId: 3, frameId: 0, documentId: "d1" });
+    await shownPage.send({ type: "hello" });
+    const next = fakeContent(bg, {
+      tabId: 3,
+      frameId: 4,
+      documentId: "pre",
+      documentLifecycle: "prerender",
+      url: "https://next.test/",
+      tabUrl: "https://example.com/",
+    });
+    await next.send(init("https://next.test/"));
+    await app.autoconsent?.idle();
+    expect(next.inbox).toEqual([]);
+
+    bg.contents.delete(shownPage);
+    next.sender = {
+      ...next.sender,
+      frameId: 0,
+      documentLifecycle: "active",
+      tabUrl: "https://next.test/",
+    };
+    expect(await next.send({ type: "hello" })).toMatchObject({ enabled: true });
+    await vi.waitFor(() => expect(next.inbox).toHaveLength(1));
+    expect(next.inbox[0]).toMatchObject({
+      type: "initResp",
+      rules: { compact: { rulesFor: "https://next.test/" } },
+      config: { enabled: true },
+    });
+    expect(asked).toEqual([{ url: "https://next.test/", mainFrame: true }]);
+    await next.send(popupFound as never);
+    await vi.waitFor(() => expect(next.inbox.map((m) => m.type)).toContain("optOut"));
+    expect(await next.send({ type: "claim" })).toEqual({ granted: false, reason: "autoconsent" });
+  });
+
+  it("a failure releasing a prerendered page's init doesn't fail Bouncer's hello", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { bg } = started({ acLib: { filterRules: () => Promise.reject(new Error("rules")) } });
+    const next = fakeContent(bg, { frameId: 4, documentId: "pre", documentLifecycle: "prerender" });
+    await next.send(init("https://example.com/"));
+    next.sender = { ...next.sender, frameId: 0, documentLifecycle: "active" };
+    expect(await next.send({ type: "hello" })).toMatchObject({ enabled: true });
+    await vi.waitFor(() => expect(error).toHaveBeenCalled());
   });
 
   it("are not held up by a slow host: the reply comes at once", async () => {

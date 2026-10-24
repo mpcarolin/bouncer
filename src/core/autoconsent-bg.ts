@@ -1,5 +1,5 @@
 import type { Arbiter } from "./arbiter.ts";
-import { AC_OPTOUT_TIMEOUT_MS } from "./config.ts";
+import { AC_OPTOUT_TIMEOUT_MS, PRERENDER_HOLDS_PER_TAB } from "./config.ts";
 import type { DecisionLog, LogEntry } from "./log.ts";
 import type { AcMessage, AutoconsentConfig, FrameMessage } from "./messages.ts";
 import type { BackgroundPlatform, Sender } from "./platform.ts";
@@ -82,6 +82,12 @@ interface TabState {
   frames: Record<number, FrameState>;
 }
 
+/** A prerendered document's `init`, not yet answered: `url` is the one autoconsent sent. */
+interface Held {
+  from: Sender;
+  url: string;
+}
+
 /** One serialised step over a tab: its state, and what of it is in storage. */
 interface Step {
   tabId: number;
@@ -139,12 +145,23 @@ const pageUrl = (from: Sender) => from.tabUrl || from.url;
  * document. A message from any other document (one since replaced, or a previous page's frame)
  * is ignored. Everything sent names the document it is for, so a message meant for a replaced
  * document (a timer firing after the page changed) never reaches its successor.
+ *
+ * A prerendered page is not the one the user is on, and its frames' ids aren't the ones they will
+ * have: its top frame becomes frame 0 only once shown. So a prerendered document's `init` is held,
+ * unanswered, and autoconsent there does nothing. Bouncer's `hello`, which its content script
+ * sends once the page is shown, releases it (`shown`).
  */
 export class AutoconsentHost {
   private readonly chains = new Map<number, Promise<unknown>>();
   private pendingChain: Promise<unknown> = Promise.resolve();
   /** In-memory wake-ups for stored deadlines, by `${tabId}:${frameId}`. */
   private readonly timers = new Map<string, number>();
+  /**
+   * Prerendered documents' inits by tab, oldest first. Kept in memory only: a worker stopped while
+   * a page is prerendered forgets them, and autoconsent, never answered, stays idle on that one
+   * page. That is safe, and Bouncer's own path, which waits for the page to be shown, still runs.
+   */
+  private readonly held = new Map<number, Held[]>();
   /** Settles once the deadlines stored by an earlier worker are re-armed or ended. */
   readonly ready: Promise<void>;
 
@@ -161,6 +178,12 @@ export class AutoconsentHost {
 
   async handle(msg: AcMessage, from: Sender): Promise<void> {
     if (from.tabId < 0) return; // not a page
+    if (from.documentLifecycle === "prerender") {
+      // Its init waits for the page to be shown, and nothing else comes from autoconsent before
+      // that is answered: nothing from a prerendered document is acted on or replied to.
+      if (msg.type === "init") this.hold(msg.url, from);
+      return;
+    }
     if (msg.type === "eval") {
       // Not queued behind the tab's other steps: autoconsent waits only a second for it.
       return this.evaluate(msg.id, msg.snippetId, from);
@@ -178,8 +201,31 @@ export class AutoconsentHost {
     return this.withTab(from.tabId, (s) => this.step(msg, from, s));
   }
 
+  /**
+   * Bouncer's `hello` from a tab's top frame: `from` is the page the tab shows. If it is a
+   * prerendered page whose init is held, it is now the tab's page, as a new page's init would make
+   * it, and its held init and those of its frames are answered, judged by its own site. Any other
+   * page there means the held ones were discarded or replaced, and they are dropped.
+   */
+  shown(from: Sender): Promise<void> {
+    if (from.tabId < 0 || from.frameId !== 0 || !this.held.has(from.tabId)) {
+      return Promise.resolve();
+    }
+    let released: Held[] = [];
+    return this.withTab(
+      from.tabId,
+      async (s) => {
+        released = await this.release(from, s);
+      },
+      true,
+    ).then(async () => {
+      await Promise.all(released.map((h) => this.answerInit(h.url, h.from)));
+    });
+  }
+
   /** The tab closed: its pending opt-outs end, and its state goes. */
   forget(tabId: number): Promise<void> {
+    this.held.delete(tabId);
     return this.serial(tabId, async () => {
       const tab = await this.load(tabId);
       await this.endFrames(tabId, tab, "tab_closed");
@@ -223,7 +269,7 @@ export class AutoconsentHost {
     // Only autoconsent's own snippets run: the code in the message is never used.
     if (snippetId) {
       try {
-        result = await this.p.runInMainWorld(from.tabId, from.frameId, snippetId);
+        result = await this.p.runInMainWorld(from.tabId, from.documentId, snippetId);
       } catch {
         result = false;
       }
@@ -267,6 +313,42 @@ export class AutoconsentHost {
     // Records the page before autoconsent can claim it, whichever of Bouncer's `hello` and this
     // arrives first. Idempotent for the same document.
     if (frameId === 0) await this.arb.topDocument(tabId, documentId);
+  }
+
+  /** Holds a prerendered document's init, unanswered, until its page is shown. */
+  private hold(url: string, from: Sender): void {
+    const holds = [...(this.held.get(from.tabId) ?? []), { from, url }];
+    this.held.set(from.tabId, holds.slice(-PRERENDER_HOLDS_PER_TAB));
+  }
+
+  /**
+   * `top` is shown. If its init is held, records it as frame 0 and the tab's other held documents
+   * as its frames, and returns them all, to be answered: their senders now say where they are.
+   * (Chrome names no parent for a frame, so a held frame of another prerender, which Chrome
+   * discards when this one is shown, is answered too, and that answer reaches nothing.)
+   */
+  private async release(top: Sender, s: Step): Promise<Held[]> {
+    const holds = this.held.get(top.tabId) ?? [];
+    const own = holds.find((h) => h.from.documentId === top.documentId);
+    if (!own) {
+      // Another page is shown: the held ones were discarded or replaced. The hello of the page
+      // already on record, which only ever comes before its prerenders, leaves them.
+      if (s.tab.frames[0]?.documentId !== top.documentId) this.held.delete(top.tabId);
+      return [];
+    }
+    this.held.delete(top.tabId);
+    const page = pageUrl(top);
+    const released: Held[] = [
+      { from: top, url: own.url },
+      ...holds
+        .filter((h) => h !== own && h.from.frameId > 0)
+        .map((h) => ({
+          url: h.url,
+          from: { ...h.from, tabUrl: page, documentLifecycle: "active" as const },
+        })),
+    ];
+    for (const h of released) await this.newDocument(h.from, s);
+    return released;
   }
 
   private async popupFound(cmp: string, from: Sender, s: Step, frame: FrameState): Promise<void> {

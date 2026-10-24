@@ -108,6 +108,11 @@ export function startBackground(
     if (hasTab && from.frameId === 0) {
       await arbiter.topDocument(from.tabId, from.documentId);
       dropBudgets(from.tabId, from.documentId); // the earlier documents are gone
+      // A prerendered page is shown: autoconsent's held inits there may now be answered. Not
+      // awaited, as for autoconsent's own messages: a failure there is no reason to stand down.
+      autoconsent
+        ?.shown(from)
+        .catch((e) => report(`autoconsent failed to release tab ${from.tabId}'s held inits`, e));
     }
     const settings = await loadSettings(p.local);
     // `enabledFor` includes the global switch. A sender with no tab is not a page to act on.

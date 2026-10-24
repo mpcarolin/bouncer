@@ -2,7 +2,7 @@ import type { BackgroundMessage, Config, ContentScriptMessage } from "@duckduckg
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Arbiter } from "../../src/core/arbiter.ts";
 import { type AcLib, AutoconsentHost, acConfig } from "../../src/core/autoconsent-bg.ts";
-import { AC_OPTOUT_TIMEOUT_MS } from "../../src/core/config.ts";
+import { AC_OPTOUT_TIMEOUT_MS, PRERENDER_HOLDS_PER_TAB } from "../../src/core/config.ts";
 import { DecisionLog, type LogEntry } from "../../src/core/log.ts";
 import type {
   AcLifecycle,
@@ -280,13 +280,29 @@ describe("init", () => {
 });
 
 describe("eval", () => {
-  it("runs the named snippet in that frame's main world and answers with its result", async () => {
+  it("runs the named snippet in that document's main world and answers with its result", async () => {
     const w = new World();
     w.bg.mainWorldResult = () => true;
     await w.from(w.cmp, { type: "eval", id: "e1", code: "…", snippetId: "EVAL_0" });
-    expect(w.bg.mainWorldCalls).toEqual([{ tabId: TAB, frameId: 2, snippetId: "EVAL_0" }]);
+    expect(w.bg.mainWorldCalls).toEqual([{ tabId: TAB, documentId: "cmp-1", snippetId: "EVAL_0" }]);
     expect(w.cmp.inbox).toEqual([{ type: "evalResp", id: "e1", result: true }]);
     expect(w.top.inbox).toEqual([]);
+  });
+
+  it("a replaced document's late eval never runs in the document that replaced it", async () => {
+    const w = new World();
+    await w.open();
+    w.bg.mainWorldResult = () => true;
+    w.cmp.sender.documentId = "cmp-2"; // the iframe loaded another document
+    await w.from(
+      w.cmp,
+      { type: "eval", id: "e1", code: "…", snippetId: "EVAL_0" },
+      {
+        documentId: "cmp-1",
+      },
+    );
+    expect(w.bg.mainWorldCalls).toEqual([{ tabId: TAB, documentId: "cmp-1", snippetId: "EVAL_0" }]);
+    expect(w.cmp.inbox).toEqual([]);
   });
 
   it("answers false when the snippet can't run, and never runs code that names no snippet", async () => {
@@ -753,6 +769,227 @@ describe("failures of its own", () => {
     expect(get).not.toHaveBeenCalled();
     await w.from(w.top, report("nothingDetected"));
     expect(get).toHaveBeenCalled();
+  });
+});
+
+describe("prerendered pages", () => {
+  const NEXT = "https://next.example/article";
+  const NEXT_WIDGET = "https://next.example/widget";
+
+  /**
+   * The shown page (PAGE) prerenders NEXT unseen: its top frame (frame 5 while it waits; frame 0
+   * once shown) and a same-origin iframe (frame 6). Chrome reports the tab's URL as the shown page's.
+   */
+  function prerender(w: World) {
+    const top = fakeContent(w.bg, {
+      tabId: TAB,
+      frameId: 5,
+      documentId: "pre-top",
+      documentLifecycle: "prerender",
+      url: NEXT,
+      tabUrl: PAGE,
+    });
+    const widget = fakeContent(w.bg, {
+      tabId: TAB,
+      frameId: 6,
+      documentId: "pre-widget",
+      documentLifecycle: "prerender",
+      url: NEXT_WIDGET,
+      tabUrl: PAGE,
+    });
+    /** The tab shows NEXT: the same documents, its top now frame 0, all of them active. */
+    const activate = () => {
+      top.sender = { ...top.sender, frameId: 0, documentLifecycle: "active", tabUrl: NEXT };
+      widget.sender = { ...widget.sender, documentLifecycle: "active", tabUrl: NEXT };
+      // The shown page's documents are gone from the tab.
+      w.bg.contents.delete(w.top);
+      w.bg.contents.delete(w.cmp);
+    };
+    return { top, widget, activate };
+  }
+
+  /** Bouncer's hello from `frame`, which its content script sends once the page is shown. */
+  async function shown(w: World, frame: FakeContent): Promise<void> {
+    await w.host.shown({ ...frame.sender });
+    await w.host.idle();
+  }
+
+  it("a prerendered document's init gets no reply, and the shown page's record is untouched", async () => {
+    const w = new World();
+    await w.open();
+    w.bg.frameSends.length = 0;
+    const next = prerender(w);
+    await w.from(next.top, init(NEXT));
+    await w.from(next.widget, init(NEXT_WIDGET));
+    expect(w.sends()).toEqual([]);
+    expect(w.filtered).toEqual([
+      { url: PAGE, mainFrame: true },
+      { url: CMP_URL, mainFrame: false },
+    ]);
+    expect(await w.bg.session.get(`ac:${TAB}`)).toEqual({
+      frames: { 0: { documentId: "top-1" }, 2: { documentId: "cmp-1" } },
+    });
+  });
+
+  it("is released by the hello from its top frame, as the page the tab shows, judged by its own site", async () => {
+    const w = new World();
+    // The shown page's site is switched off, the prerendered one's isn't.
+    await w.setSettings({ disabledSites: ["news.example"] });
+    await w.open();
+    const next = prerender(w);
+    await w.from(next.top, init(NEXT));
+    await w.from(next.widget, init(NEXT_WIDGET));
+    w.bg.frameSends.length = 0;
+    next.activate();
+    await shown(w, next.top);
+    expect(w.sends()).toEqual([
+      ["initResp", 0, "pre-top"],
+      ["initResp", 6, "pre-widget"],
+    ]);
+    expect(next.top.inbox).toEqual([
+      {
+        type: "initResp",
+        rules: { autoconsent: [], compact: { rulesFor: NEXT } },
+        config: acConfig(true),
+      },
+    ]);
+    expect(next.widget.inbox).toEqual([
+      {
+        type: "initResp",
+        rules: { autoconsent: [], compact: { rulesFor: NEXT_WIDGET } },
+        config: acConfig(true),
+      },
+    ]);
+    expect(w.filtered.slice(-2)).toEqual([
+      { url: NEXT, mainFrame: true },
+      { url: NEXT_WIDGET, mainFrame: false },
+    ]);
+    // The shown page's frames are gone from the record, and the new page's are on it.
+    expect(await w.bg.session.get(`ac:${TAB}`)).toEqual({
+      frames: { 0: { documentId: "pre-top" }, 6: { documentId: "pre-widget" } },
+    });
+    // autoconsent works there as on any page: from frame 0 under the document's own id.
+    await w.from(next.top, cmpDetected());
+    expect(await w.arb.owner(TAB)).toBe("autoconsent");
+    await w.from(next.widget, popupFound());
+    expect(next.widget.inbox.at(-1)).toEqual({ type: "optOut" });
+    expect(next.top.inbox.at(-1)).toEqual({ type: "acPopupFound" });
+    expect(await w.entry()).toMatchObject({ site: "next.example", url: NEXT, outcome: "working" });
+  });
+
+  it("its release ends the shown page's opt-out as navigation", async () => {
+    const w = new World();
+    await w.open();
+    await w.from(w.cmp, popupFound());
+    const next = prerender(w);
+    await w.from(next.top, init(NEXT));
+    next.activate();
+    await shown(w, next.top);
+    expect(await w.entry()).toMatchObject({
+      site: "news.example",
+      outcome: "failed",
+      reason: "navigation",
+    });
+    expect(await w.bg.session.get("ac:pending")).toEqual([]);
+  });
+
+  it("a popupFound from the shown page while a prerender is held behaves as before", async () => {
+    const w = new World();
+    await w.open();
+    const next = prerender(w);
+    await w.from(next.top, init(NEXT));
+    await w.from(next.widget, init(NEXT_WIDGET));
+    await w.from(w.cmp, popupFound());
+    expect(w.cmp.inbox).toEqual([{ type: "optOut" }]);
+    expect(w.top.inbox).toEqual([{ type: "acPopupFound" }]);
+    expect(await w.arb.owner(TAB)).toBe("autoconsent");
+    expect(await w.entry()).toMatchObject({ site: "news.example", url: PAGE, outcome: "working" });
+    expect([...next.top.inbox, ...next.widget.inbox]).toEqual([]);
+  });
+
+  it("nothing but its held initResp goes to a prerendered document: no optOut, no claim, no eval", async () => {
+    const w = new World();
+    await w.open();
+    w.bg.frameSends.length = 0;
+    const next = prerender(w);
+    await w.from(next.top, init(NEXT));
+    await w.from(next.widget, init(NEXT_WIDGET));
+    // Out of order, as no autoconsent instance sends them before its initResp.
+    await w.from(next.top, cmpDetected());
+    await w.from(next.widget, popupFound());
+    await w.from(next.top, popupFound());
+    await w.from(next.widget, { type: "eval", id: "e1", code: "…", snippetId: "EVAL_0" });
+    expect(w.sends()).toEqual([]);
+    expect(w.bg.mainWorldCalls).toEqual([]);
+    expect(await w.arb.owner(TAB)).toBe("none");
+    expect(await w.log.list()).toEqual([]);
+  });
+
+  it("the shown page's own hello leaves the hold in place", async () => {
+    const w = new World();
+    await w.open();
+    const next = prerender(w);
+    await w.from(next.top, init(NEXT));
+    await shown(w, w.top);
+    next.activate();
+    await shown(w, next.top);
+    expect(types(next.top)).toEqual(["initResp"]);
+  });
+
+  it("is dropped when another page says hello in the tab: that prerender was discarded", async () => {
+    const w = new World();
+    await w.open();
+    const next = prerender(w);
+    await w.from(next.top, init(NEXT));
+    await w.from(next.widget, init(NEXT_WIDGET));
+    // The user went elsewhere: a new page, not the prerendered one.
+    w.top.sender.documentId = "top-2";
+    await shown(w, w.top);
+    w.bg.frameSends.length = 0;
+    next.activate();
+    await shown(w, next.top);
+    expect(w.sends()).toEqual([]);
+  });
+
+  it("is dropped when the tab closes", async () => {
+    const w = new World();
+    await w.open();
+    const next = prerender(w);
+    await w.from(next.top, init(NEXT));
+    await w.host.forget(TAB);
+    next.activate();
+    await shown(w, next.top);
+    expect(w.sends("initResp")).toEqual([]);
+    expect(types(next.top)).toEqual([]);
+  });
+
+  it(`holds at most ${PRERENDER_HOLDS_PER_TAB} per tab, dropping the oldest`, async () => {
+    const w = new World();
+    await w.open();
+    const next = prerender(w);
+    await w.from(next.top, init(NEXT)); // the oldest
+    const frames = Array.from({ length: PRERENDER_HOLDS_PER_TAB }, (_, i) =>
+      fakeContent(w.bg, {
+        tabId: TAB,
+        frameId: 10 + i,
+        documentId: `pre-frame-${i}`,
+        documentLifecycle: "prerender",
+        url: NEXT_WIDGET,
+        tabUrl: PAGE,
+      }),
+    );
+    for (const f of frames) await w.from(f, init(NEXT_WIDGET));
+    w.bg.frameSends.length = 0;
+    next.activate();
+    const newest = frames.at(-1) as FakeContent;
+    newest.sender = { ...newest.sender, frameId: 0, documentLifecycle: "active", tabUrl: NEXT };
+    await shown(w, newest);
+    // The newest and the rest it held, but not the oldest, which was dropped.
+    const docs = frames.map((f) => f.sender.documentId);
+    expect(w.sends().map(([, , documentId]) => documentId)).toEqual([
+      docs.at(-1),
+      ...docs.slice(0, -1),
+    ]);
   });
 });
 

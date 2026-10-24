@@ -66,8 +66,11 @@ export interface FakeBackground extends BackgroundPlatform {
   openedWith: { page: PageName; query?: Record<string, string> }[];
   /** Every `sendToFrame` call, delivered or not, in order. */
   frameSends: { tabId: number; frameId: number; documentId?: string; msg: FrameMessage }[];
-  /** Main-world snippets run, in order; `mainWorldResult` is what they return. */
-  mainWorldCalls: { tabId: number; frameId: number; snippetId: string }[];
+  /**
+   * Main-world snippets asked for, in order; `mainWorldResult` is what they return. Like Chrome,
+   * one for a document no content holds rejects.
+   */
+  mainWorldCalls: { tabId: number; documentId: string; snippetId: string }[];
   mainWorldResult: (snippetId: string) => unknown;
   /** @internal registry used by `fakeContent`. */
   contents: Set<FakeContent>;
@@ -119,8 +122,12 @@ export function fakeBackground(): FakeBackground {
       bg.opened.push(p);
       bg.openedWith.push({ page: p, query: query && { ...query } });
     },
-    async runInMainWorld(tabId, frameId, snippetId) {
-      bg.mainWorldCalls.push({ tabId, frameId, snippetId });
+    async runInMainWorld(tabId, documentId, snippetId) {
+      bg.mainWorldCalls.push({ tabId, documentId, snippetId });
+      const held = [...bg.contents].some(
+        (c) => c.sender.tabId === tabId && c.sender.documentId === documentId,
+      );
+      if (!held) throw new Error(`No document with id ${documentId} in tab ${tabId}`);
       return structuredClone(bg.mainWorldResult(snippetId));
     },
     restart() {
@@ -151,7 +158,7 @@ export function fakeBackground(): FakeBackground {
 export interface FakeContent extends ContentPlatform {
   /**
    * Mutable: tests may change `url` and `tabUrl` (navigation; for a top frame they are the same
-   * page) or `documentId`.
+   * page), `documentId`, or `frameId` and `documentLifecycle` (a prerendered page being shown).
    */
   sender: Sender;
   /** Everything `sendToFrame` delivered to this frame, Bouncer's messages and autoconsent's. */
@@ -171,6 +178,7 @@ export function fakeContent(bg: FakeBackground, sender: Partial<Sender> = {}): F
       tabId: 1,
       frameId: 0,
       documentId: "doc-1",
+      documentLifecycle: "active",
       tabUrl: url,
       ...sender,
       url,
@@ -192,6 +200,7 @@ const PAGE_SENDER: Sender = {
   tabId: -1,
   frameId: -1,
   documentId: "",
+  documentLifecycle: "active",
   url: "chrome-extension://fake-extension-id/settings.html",
   tabUrl: "chrome-extension://fake-extension-id/settings.html",
 };

@@ -12,3 +12,9 @@ export const CREATE_TIMEOUT_MS = 30000;
 export const PROMPT_TIMEOUT_MS = 8000;
 export const AC_OPTOUT_TIMEOUT_MS = 15000;
 export const LOG_RETENTION_MS = 86_400_000;
+/**
+ * The prerendered documents whose autoconsent `init` is held per tab, the oldest dropped. Chrome
+ * renders a prerendered page's cross-origin iframes only once it is shown, so the holds are its
+ * top frame's and its same-origin frames'.
+ */
+export const PRERENDER_HOLDS_PER_TAB = 8;

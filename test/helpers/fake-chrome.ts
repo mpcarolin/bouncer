@@ -20,6 +20,7 @@ export interface FakeSender {
   tab?: { id?: number; url?: string };
   frameId?: number;
   documentId?: string;
+  documentLifecycle?: chrome.extensionTypes.DocumentLifecycle;
   url?: string;
 }
 
@@ -70,7 +71,7 @@ class FakeArea {
 }
 
 export interface ExecuteScriptCall {
-  target: { tabId: number; frameIds?: number[] };
+  target: { tabId: number; frameIds?: number[]; documentIds?: string[] };
   world?: string;
   func: unknown;
 }
