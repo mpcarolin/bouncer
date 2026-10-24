@@ -47,9 +47,14 @@ export class DecisionLog {
     return run;
   }
 
-  /** The stored entries and those within retention, without writing anything. */
+  /**
+   * The stored entries and those within retention, without writing anything. A stored value that
+   * isn't a list reads as empty, so it can't stop every later read and write; the next write
+   * replaces it.
+   */
   private async read(): Promise<{ all: LogEntry[]; kept: LogEntry[] }> {
-    const all = (await this.kv.get<LogEntry[]>(KEY)) ?? [];
+    const stored = await this.kv.get<unknown>(KEY);
+    const all = Array.isArray(stored) ? (stored as LogEntry[]) : [];
     const cutoff = this.now() - LOG_RETENTION_MS;
     return { all, kept: all.filter((e) => e.at >= cutoff) };
   }

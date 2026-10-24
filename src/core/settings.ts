@@ -18,13 +18,20 @@ export const DEFAULT_SETTINGS: Settings = {
 
 const KEY = "settings";
 
-/** Stored values are merged over the defaults, so older or partial records stay valid. */
+/**
+ * Stored values are merged over the defaults, so older or partial records stay valid. A stored
+ * `disabledSites` that isn't a list is dropped, and so is any entry in it that isn't a string:
+ * every page's `hello` reads it, so a bad value must never make the read throw.
+ */
 export async function loadSettings(kv: KV): Promise<Settings> {
   const stored = await kv.get<Partial<Settings>>(KEY);
+  const sites: unknown = stored?.disabledSites;
   return {
     ...DEFAULT_SETTINGS,
     ...stored,
-    disabledSites: [...(stored?.disabledSites ?? DEFAULT_SETTINGS.disabledSites)],
+    disabledSites: Array.isArray(sites)
+      ? sites.filter((d): d is string => typeof d === "string")
+      : [...DEFAULT_SETTINGS.disabledSites],
   };
 }
 

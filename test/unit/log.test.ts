@@ -109,6 +109,19 @@ describe("DecisionLog", () => {
     expect(await local.get<LogEntry[]>("decisionLog")).toHaveLength(2);
   });
 
+  it("a stored value that isn't a list reads as empty, and the next write repairs it", async () => {
+    for (const junk of [{ not: "a list" }, "corrupt", 7, null]) {
+      const { log, local } = setup();
+      await local.set("decisionLog", junk);
+      expect(await log.list()).toEqual([]);
+      expect(await log.peek()).toEqual([]);
+      expect(await log.exportJson()).toBe("[]");
+      await log.patch("unknown", { outcome: "failed" });
+      const id = await log.add(entry(0));
+      expect((await local.get<LogEntry[]>("decisionLog"))?.map((e) => e.id)).toEqual([id]);
+    }
+  });
+
   it("peek of a log nobody has written to is empty", async () => {
     expect(await setup().log.peek()).toEqual([]);
   });

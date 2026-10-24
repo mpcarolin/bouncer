@@ -32,6 +32,26 @@ describe("settings", () => {
     expect(await loadSettings(local)).toEqual({ ...DEFAULT_SETTINGS, agreeToDismiss: true });
   });
 
+  it("drops a stored disabledSites that isn't a list, and entries that aren't names", async () => {
+    const { local } = fakeBackground();
+    const cases: [unknown, string[]][] = [
+      [7, []],
+      [{ 0: "a.com" }, []],
+      ["a.com", []],
+      [
+        ["a.com", 3, null, { site: "x" }, "b.com"],
+        ["a.com", "b.com"],
+      ],
+    ];
+    for (const [stored, sites] of cases) {
+      await local.set("settings", { ...DEFAULT_SETTINGS, disabledSites: stored });
+      const s = await loadSettings(local);
+      expect(s.disabledSites).toEqual(sites);
+      // The verdict, which every page's hello asks for, still comes.
+      expect(enabledFor(s, "https://c.com/")).toBe(true);
+    }
+  });
+
   it("enabledFor ignores www. and honours disabledSites", () => {
     const s = { ...DEFAULT_SETTINGS, disabledSites: ["example.com"] };
     expect(enabledFor(s, "https://www.example.com/x")).toBe(false);
