@@ -105,6 +105,74 @@ describe("findCandidates", () => {
     expect(findCandidates(document)).toEqual([]);
   });
 
+  describe("in-flow banners (§2a's in-flow case)", () => {
+    // Shaped on parliament.uk and ons.gov.uk: banners in the page's normal flow, before the header.
+    const PARLIAMENT = `<div id="p-cookie-banner" class="p-cookie-banner__wrapper">
+      <div class="p-cookie-banner p-cookie-manager"><p>We use necessary cookies to make our site
+      work. We'd also like to set additional cookies to understand how you use the site. Read our
+      <a href="/cookie-policy">cookie policy</a>.</p><button>Accept additional cookies</button>
+      <button>Reject additional cookies</button><button>Cookie settings</button></div></div>`;
+    const ONS = `<section><form id="global-cookie-message" class="cookies-banner"
+      aria-label="cookie banner" action="/cookies/accept-all" method="get">
+      <div class="cookies-banner__wrapper" role="region" aria-label="Cookies banner">
+      <h2>Cookies on ONS.GOV.UK</h2><p>Essential cookies make this website work. We'd like to set
+      <a href="/cookies">additional cookies</a> to understand how you use the site.</p>
+      <button type="submit" data-action="accept">Accept additional cookies</button>
+      <button type="submit" data-action="reject">Reject additional cookies</button>
+      <a href="/cookies">Manage settings</a></div></form></section>`;
+    const PAGE = `<header>Site header <button>Menu</button></header>
+      <main><h1>Welcome</h1><div style="height:3000px"></div></main>`;
+
+    it("finds a parliament-shaped banner at the top of a long page", () => {
+      mount(PARLIAMENT + PAGE);
+      const found = findCandidates(document);
+      expect(found.map((c) => c.el.id)).toEqual(["p-cookie-banner"]);
+      expect(found[0]?.modal).toBe(false);
+    });
+
+    it("finds an ONS-shaped banner, the form being the outermost that qualifies", () => {
+      mount(ONS + PAGE);
+      expect(findCandidates(document).map((c) => c.el.id)).toEqual(["global-cookie-message"]);
+    });
+
+    it("finds a self-named banner at the bottom of a long page", () => {
+      mount(`<div style="height:3000px"></div>${PARLIAMENT}`);
+      expect(findCandidates(document).map((c) => c.el.id)).toEqual(["p-cookie-banner"]);
+    });
+
+    it("ignores the same shape inside main, article or their roles", () => {
+      for (const wrap of ["main", "article", 'div role="main"', 'div role="article"']) {
+        const tag = wrap.split(" ")[0];
+        mount(`<${wrap}>${PARLIAMENT}</${tag}>`);
+        expect(findCandidates(document), wrap).toEqual([]);
+        unmountAll();
+      }
+    });
+
+    it("ignores an in-flow element with consent text that doesn't name itself", () => {
+      mount(
+        `<div id="notice">We use cookies. <button>Accept</button><button>Reject</button></div>`,
+      );
+      expect(findCandidates(document)).toEqual([]);
+    });
+
+    it("ignores an app root wrapping a small page that holds an unstyled cookie banner", () => {
+      mount(`<div id="root"><header>Shop</header><div>We use cookies to improve your visit.
+        <button>Accept</button><button>Reject</button></div><p>Today's offers</p></div>`);
+      expect(findCandidates(document)).toEqual([]);
+    });
+
+    it("ignores an in-flow element that names itself but has privacy wording only", () => {
+      mount(`<div class="cookie-notice">We respect your privacy. <button>OK</button></div>`);
+      expect(findCandidates(document)).toEqual([]);
+    });
+
+    it("ignores an in-flow element that names itself, mid-way down a long page", () => {
+      mount(`<div style="height:3000px"></div>${PARLIAMENT}<div style="height:3000px"></div>`);
+      expect(findCandidates(document)).toEqual([]);
+    });
+  });
+
   it("gives equal text equal keys and different text different keys", () => {
     mount(cookieBar());
     const a = findCandidates(document)[0] as Candidate;

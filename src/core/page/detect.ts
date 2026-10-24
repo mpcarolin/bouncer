@@ -17,8 +17,12 @@ export interface Candidate {
  */
 export const CONSENT_WORDING = /cookie|consent/i;
 const PRIVACY_WORDING = /privacy|datenschutz|confidentialit|privacidad/i;
-/** Text that lets an element be a banner candidate: consent wording or a privacy word. */
+/** Text that lets an overlay be a banner candidate: consent wording or a privacy word. */
 const CONSENT_TEXT = new RegExp(`${CONSENT_WORDING.source}|${PRIVACY_WORDING.source}`, "i");
+/** An in-flow banner's own id, class or `aria-label` calls it one. An app root (`#root`) doesn't. */
+const NAMES_A_BANNER = /cookie|consent|gdpr/i;
+/** The page's own content: a cookie preferences page, an "accept cookies to see this" placeholder. */
+const PAGE_CONTENT = 'main, article, [role="main"], [role="article"]';
 const Z_INDEX_MIN = 1000;
 const MODAL_COVERAGE = 0.5;
 
@@ -42,6 +46,34 @@ export function isOverlay(el: Element): boolean {
   );
 }
 
+function namesItselfABanner(el: Element): boolean {
+  return [el.id, el.getAttribute("class"), el.getAttribute("aria-label")].some(
+    (s) => !!s && NAMES_A_BANNER.test(s),
+  );
+}
+
+function inPageContent(el: Element): boolean {
+  for (let n: Element | null = el; n; n = parentOf(n)) if (n.matches(PAGE_CONTENT)) return true;
+  return false;
+}
+
+/** Within a viewport's height of the top or the bottom of the document. */
+function atPageEdge(el: Element): boolean {
+  const win = el.ownerDocument.defaultView ?? window;
+  const r = el.getBoundingClientRect();
+  const end = el.ownerDocument.documentElement.scrollHeight;
+  return r.top + win.scrollY < win.innerHeight || r.bottom + win.scrollY > end - win.innerHeight;
+}
+
+/**
+ * §2a's in-flow case: a banner in the page's normal flow (GOV.UK's style) rather than an overlay.
+ * It names itself a consent banner, sits outside the page's main content, and sits at the top or
+ * the bottom of the page. Its text must also carry consent wording (`qualify`).
+ */
+function isInFlowBanner(el: Element): boolean {
+  return namesItselfABanner(el) && !inPageContent(el) && atPageEdge(el);
+}
+
 function sameOriginLinks(el: Element): number {
   let n = 0;
   for (const a of deepAll(el, "a[href]")) {
@@ -63,9 +95,11 @@ export function isModal(el: Element): boolean {
 }
 
 function qualify(el: Element): Candidate | null {
-  if (!isOverlay(el) || !isVisible(el)) return null;
+  const overlay = isOverlay(el);
+  if ((!overlay && !isInFlowBanner(el)) || !isVisible(el)) return null;
   const text = textOf(el);
-  if (!CONSENT_TEXT.test(text)) return null;
+  // Privacy wording alone doesn't make an in-flow element a banner.
+  if (!(overlay ? CONSENT_TEXT : CONSENT_WORDING).test(text)) return null;
   if (!deepAll(el, BUTTON_SEL).some(isVisible)) return null;
   if (sameOriginLinks(el) > LINK_THRESHOLD) return null;
   return {
