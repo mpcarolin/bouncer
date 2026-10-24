@@ -123,6 +123,17 @@ describe("gate", () => {
     ]);
   });
 
+  it("is cold for every call that waits on the base's creation, not only the one that began it", async () => {
+    const { p, state } = make({ createMs: 500 });
+    const first = p.isConsentDialog(banner);
+    const second = p.isConsentDialog(banner);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await first).toMatchObject({ kind: "answer", meta: { cold: true } });
+    expect(await second).toMatchObject({ kind: "answer", meta: { cold: true } });
+    expect(state.createCalls).toHaveLength(1);
+    expect(await p.isConsentDialog(banner)).toMatchObject({ meta: { cold: false } });
+  });
+
   it("counts creation time in ms", async () => {
     const { p } = make({ createMs: 500 });
     const r = p.isConsentDialog(banner);

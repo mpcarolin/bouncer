@@ -178,11 +178,9 @@ export class PromptApiProvider implements AiProvider {
       }
       const lm = this.lm as LanguageModelStatic;
 
-      let entry = this.bases.get(kind);
-      if (!entry) {
-        cold = true;
-        entry = this.create(lm, kind);
-      }
+      const entry = this.bases.get(kind) ?? this.create(lm, kind);
+      // Cold for every call that waits on the base's creation, not only the one that began it.
+      cold = !entry.session;
       let base = entry.session;
       if (!base) {
         const r = await timebox(entry.promise, CREATE_TIMEOUT_MS);
