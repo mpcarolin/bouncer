@@ -10,7 +10,7 @@ import {
   toggleChanges,
 } from "../choose.ts";
 import { PANEL_WAIT_MS } from "../config.ts";
-import { labelDeterministic, mergeAiLabels } from "../label.ts";
+import { idsLeftToAi, labelDeterministic, mergeAiLabels } from "../label.ts";
 import type { LearnedStage, RecordedFlow, Stage2 } from "../learned.ts";
 import type { ClickResult } from "../page/click.ts";
 import { clickability } from "../page/clickable.ts";
@@ -275,9 +275,7 @@ async function decideIn(panel: Element, { deps }: HopContext): Promise<HopResult
   const fail = (reason: string): HopResult => ({ ok: false, reason, panel });
   const ser = serialise({ el: panel }, clickability, { hiddenToggles: true });
   const det = labelDeterministic(ser.banner);
-  const unlabelled = ser.banner.controls
-    .filter((c) => det.get(c.id) === null && !c.absent)
-    .map((c) => c.id);
+  const unlabelled = idsLeftToAi(ser.banner, det);
   let given: Record<number, Label> = {};
   if (unlabelled.length > 0) {
     const got = await deps.label(ser.banner, unlabelled);

@@ -73,6 +73,18 @@ export type Outcome =
   | "failed"
   | "model_unavailable";
 
+/**
+ * The outcomes in which the banner was dismissed, by either path: the own path's ending, its
+ * scroll unlock, and the latch on autoconsent's outcome all read this one set.
+ */
+export const DISMISSED: ReadonlySet<Outcome> = new Set<Outcome>([
+  "dismissed",
+  "dismissed_unverified",
+  "dismissed_close",
+  "dismissed_agreed",
+  "dismissed_late",
+]);
+
 /** Injected for fake timers. */
 export interface Clock {
   now(): number;

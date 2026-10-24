@@ -9,7 +9,7 @@
 import type { AiProvider, AiResult } from "./ai.ts";
 import { NEEDS_CORROBORATION } from "./choose.ts";
 import type { BannerFixture } from "./fixture.ts";
-import { labelDeterministic, mergeAiLabels } from "./label.ts";
+import { idsLeftToAi, labelDeterministic, mergeAiLabels } from "./label.ts";
 import type { BlockReason, Label, Labelled } from "./types.ts";
 
 /** How one provider call ended and how long it took. */
@@ -185,11 +185,7 @@ export async function runBenchmark(
 ): Promise<BenchReport> {
   const plans = fixtures.map((f) => {
     const det = labelDeterministic(f.banner);
-    // The AI labels only buttons and links the rules left open, and never one that is absent.
-    const ids =
-      f.kind === "positive"
-        ? f.banner.controls.filter((c) => det.get(c.id) === null && !c.absent).map((c) => c.id)
-        : [];
+    const ids = f.kind === "positive" ? idsLeftToAi(f.banner, det) : [];
     const report: FixtureReport = {
       id: f.id,
       kind: f.kind,

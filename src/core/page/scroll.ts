@@ -4,7 +4,7 @@
 // `overflow` is restored (never forced to `auto`); `position`, `top` and the scroll offset are
 // left alone.
 
-import type { Outcome } from "../types.ts";
+import { DISMISSED, type Outcome } from "../types.ts";
 
 /** Inline `overflow` values of `html` and `body`, and whether the page could scroll. */
 export interface ScrollRecord {
@@ -23,14 +23,6 @@ export type SkipReason =
   | "lock_not_inline";
 
 export type UnlockResult = "unlocked" | `skipped:${SkipReason}`;
-
-const DISMISSED: ReadonlySet<Outcome> = new Set<Outcome>([
-  "dismissed",
-  "dismissed_unverified",
-  "dismissed_close",
-  "dismissed_agreed",
-  "dismissed_late",
-]);
 
 export class ScrollTracker {
   private record: ScrollRecord | null = null;

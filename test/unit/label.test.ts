@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { labelDeterministic, mergeAiLabels } from "../../src/core/label.ts";
+import { idsLeftToAi, labelDeterministic, mergeAiLabels } from "../../src/core/label.ts";
 import { loadFixtures } from "../fixtures/load.ts";
 import { b, btn, lab, lnk, tog } from "../helpers/banner.ts";
 
@@ -13,6 +13,17 @@ describe("fixtures", () => {
       }
     },
   );
+});
+
+test("the AI is left the controls the rules leave open, never an absent one or a toggle", () => {
+  const banner = b([
+    btn("Reject all"),
+    btn("Continue to site"),
+    btn("Proceed", { absent: "submit" }),
+    lnk("Cookie Policy"),
+    tog("Marketing"),
+  ]);
+  expect(idsLeftToAi(banner, labelDeterministic(banner))).toEqual([1, 3]);
 });
 
 test("toggles are deterministic", () => {

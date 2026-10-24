@@ -1,13 +1,12 @@
 import type { AbsentReason, Control, Role, SerialisedBanner } from "../types.ts";
 import type { Candidate } from "./detect.ts";
-import { collapse, deepAll, isVisible, labelText, textOf } from "./dom.ts";
+import { collapse, deepAll, isVisible, labelText, TOGGLE_SEL, textOf } from "./dom.ts";
 
 export { isVisible };
 
 export const CONTROL_TEXT_CHARS = 120;
 export const BANNER_TEXT_CHARS = 2000;
 
-const TOGGLE_SEL = 'input[type="checkbox"], [role="switch"], [role="checkbox"]';
 const CONTROL_SEL = [
   "button",
   "a[href]",

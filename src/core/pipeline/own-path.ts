@@ -6,7 +6,7 @@
 import type { AiProvider, AiResult, AiStatus } from "../ai.ts";
 import { type ChooseOpts, choose, type Corroboration, decide, MODEL_REASONS } from "../choose.ts";
 import { CLAIM_WAIT_MS } from "../config.ts";
-import { labelDeterministic, mergeAiLabels } from "../label.ts";
+import { idsLeftToAi, labelDeterministic, mergeAiLabels } from "../label.ts";
 import {
   isLearnedRule,
   type LearnedRule,
@@ -26,15 +26,16 @@ import { type Serialised, serialise, shownOnly } from "../page/serialise.ts";
 import { autoconsentHides, isGoneBySite, verifyDismissed } from "../page/verify.ts";
 import type { ContentPlatform } from "../platform.ts";
 import { type Settings, siteOf } from "../settings.ts";
-import type {
-  AbsentReason,
-  Clock,
-  Control,
-  Decision,
-  Label,
-  Labelled,
-  Outcome,
-  SerialisedBanner,
+import {
+  type AbsentReason,
+  type Clock,
+  type Control,
+  DISMISSED,
+  type Decision,
+  type Label,
+  type Labelled,
+  type Outcome,
+  type SerialisedBanner,
 } from "../types.ts";
 import { fastPathTarget } from "./fast-path.ts";
 import {
@@ -129,14 +130,6 @@ const DISMISSED_AS: Record<Exclude<Decision["kind"], "no_option" | "unsure">, Ou
   close: "dismissed_close",
   agree: "dismissed_agreed",
 };
-
-const DISMISSED = new Set<Outcome>([
-  "dismissed",
-  "dismissed_unverified",
-  "dismissed_close",
-  "dismissed_agreed",
-  "dismissed_late",
-]);
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -468,10 +461,7 @@ export class OwnPath {
       return { decision: { kind: "reject", target }, aiOnly: false };
     }
 
-    // The AI labels only buttons and links the rules left open, and never one that is absent.
-    const unlabelled = banner.controls
-      .filter((c) => det.get(c.id) === null && !c.absent)
-      .map((c) => c.id);
+    const unlabelled = idsLeftToAi(banner, det);
     const [gate, labels] = await Promise.all([
       this.model(r, "isConsentDialog", () => this.d.ai.isConsentDialog(banner)),
       unlabelled.length > 0

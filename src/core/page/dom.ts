@@ -6,6 +6,9 @@ const NON_TEXT = new Set(["SELECT", "OPTION", "SCRIPT", "STYLE", "NOSCRIPT", "TE
 /** Button-like controls: what a banner must contain at least one of. */
 export const BUTTON_SEL = 'button, input[type="button"], input[type="submit"], [role="button"]';
 
+/** Toggle-like controls: checkboxes and switches, native or ARIA. */
+export const TOGGLE_SEL = 'input[type="checkbox"], [role="switch"], [role="checkbox"]';
+
 export function collapse(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }

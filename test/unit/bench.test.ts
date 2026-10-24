@@ -253,6 +253,19 @@ describe("runBenchmark: the labeller", () => {
     expect(report.perFixture[0]?.labeller[0]).toMatchObject({ outcome: "timeout" });
   });
 
+  it("leaves out a control the rules leave open that is absent, as the own path does", async () => {
+    const f = fixture(
+      "p1",
+      "positive",
+      [btn("Reject all"), btn("Continue to site", { absent: "submit" }), lnk("Cookie Policy")],
+      ["reject", "accept", "link"],
+    );
+    const { provider, asked } = stub({ labels: () => answer({ 2: "link" }) });
+    const report = await runBenchmark(provider, [f], 1);
+    expect(asked.labels).toEqual([[2]]);
+    expect(report.labeller).toEqual({ correct: 1, total: 1 });
+  });
+
   it("does not call the model for a positive with nothing left to it, or for a negative", async () => {
     const fixtures = [
       fixture("p1", "positive", [btn("Reject all")], ["reject"]),

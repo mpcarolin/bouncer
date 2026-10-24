@@ -1,10 +1,9 @@
 // Finding the panel that appears after a settings click (§2f.3).
 import { PANEL_WAIT_MS } from "../config.ts";
 import { CONSENT_WORDING } from "./detect.ts";
-import { BUTTON_SEL, deepAll, parentOf, textOf } from "./dom.ts";
+import { BUTTON_SEL, deepAll, parentOf, TOGGLE_SEL, textOf } from "./dom.ts";
 import { isVisibleControl } from "./serialise.ts";
 
-const TOGGLE_SEL = 'input[type="checkbox"], [role="switch"], [role="checkbox"]';
 const CONTROL_SEL = `${BUTTON_SEL}, a[href], [role="link"], ${TOGGLE_SEL}`;
 /** Bounds the work of one snapshot or scan on a huge page. */
 const MAX_ELEMENTS = 20000;

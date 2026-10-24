@@ -92,6 +92,14 @@ function withBlocks(c: Control, label: Label, source: Labelled["source"]): Label
 
 const isClickable = (c: Control) => c.role === "button" || c.role === "link";
 
+/**
+ * The controls the AI is asked to label (step 5): the buttons and links the rules left open
+ * (`null` in `det`), never one that is absent.
+ */
+export function idsLeftToAi(b: SerialisedBanner, det: Map<number, Labelled | null>): number[] {
+  return b.controls.filter((c) => det.get(c.id) === null && !c.absent).map((c) => c.id);
+}
+
 /** Steps 1–4. `null` marks a button or link left for the AI. */
 export function labelDeterministic(b: SerialisedBanner): Map<number, Labelled | null> {
   const hasToggle = b.controls.some((c) => c.role === "toggle");
