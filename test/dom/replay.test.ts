@@ -340,7 +340,8 @@ describe("learned rules (§2h)", () => {
     first.textContent = "Accept all";
     second.textContent = "Decline all";
 
-    // In the pipeline: the rule goes, and the full pipeline runs on the same banner untouched.
+    // In the pipeline: the rule is not discarded, and the full pipeline runs on the same banner
+    // untouched.
     const provider = new Counting();
     let h: Harness | undefined;
     let touchedAtGate: number | undefined;
