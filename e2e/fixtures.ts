@@ -2,7 +2,8 @@
 // Chromium, a fresh profile per test, so no test sees another's settings, learned rules or log;
 // and the pages in e2e/pages served locally, each on a host of its own under `.localhost`
 // (Chrome resolves those to loopback), because learned rules and the per-site switch are keyed
-// by site. Nothing here reaches the network.
+// by site. Every test fails on an error in any console, or on a request that leaves the machine
+// (see `context`).
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -53,17 +54,6 @@ export interface ExtensionFixtures {
   setSettings(s: Partial<Settings>): Promise<void>;
   /** A value in the extension's local storage. */
   stored(key: string): Promise<unknown>;
-  /**
-   * Errors logged by the extension's pages, the test pages (content scripts included) or the
-   * service worker. Collected for every test, which fails if there are any, unless it is tagged
-   * `@live` (a live site's console is its own).
-   */
-  consoleErrors: string[];
-  /**
-   * http(s) requests to any host but the local pages', from the pages or the extension. Collected
-   * for every test, which fails if there are any, unless it is tagged `@live`.
-   */
-  offsiteRequests: string[];
 }
 
 export const test = base.extend<ExtensionFixtures, { pagesPort: number }>({
@@ -91,7 +81,15 @@ export const test = base.extend<ExtensionFixtures, { pagesPort: number }>({
     { scope: "worker" },
   ],
 
-  context: async ({}, use) => {
+  /**
+   * Also the guards. The test fails on an error logged in any console (the test pages and their
+   * content scripts, the extension's pages, the service worker) or on an http(s) request to a
+   * host other than the local pages', unless it is tagged `@live` (a live site's console and
+   * requests are its own). They are attached as the launch resolves, which is before anything
+   * of the extension's runs: at that point neither its service worker nor the onboarding tab it
+   * opens on install exists yet.
+   */
+  context: async ({}, use, testInfo) => {
     await stat(join(EXTENSION, "manifest.json")).catch(() => {
       throw new Error(`no e2e build at ${EXTENSION}: run pnpm build:e2e first`);
     });
@@ -102,8 +100,22 @@ export const test = base.extend<ExtensionFixtures, { pagesPort: number }>({
       headless: true,
       args: [`--disable-extensions-except=${EXTENSION}`, `--load-extension=${EXTENSION}`],
     });
+    const errors: string[] = [];
+    const offsite: string[] = [];
+    context.on("console", (m) => {
+      if (m.type() === "error") errors.push(`${m.location().url}: ${m.text()}`);
+    });
+    context.on("request", (r) => {
+      const { protocol, hostname } = new URL(r.url());
+      const web = protocol === "http:" || protocol === "https:";
+      if (web && !hostname.endsWith(".localhost")) offsite.push(r.url());
+    });
     try {
       await use(context);
+      if (!testInfo.tags.includes("@live")) {
+        expect(errors, "errors in the console").toEqual([]);
+        expect(offsite, "requests that left the machine").toEqual([]);
+      }
     } finally {
       await context.close();
       await rm(profile, { recursive: true, force: true });
@@ -165,35 +177,4 @@ export const test = base.extend<ExtensionFixtures, { pagesPort: number }>({
       serviceWorker.evaluate(async (k) => (await chrome.storage.local.get(k))[k], key),
     );
   },
-
-  consoleErrors: [
-    async ({ context, serviceWorker }, use, testInfo) => {
-      const errors: string[] = [];
-      context.on("console", (m) => {
-        if (m.type() === "error") errors.push(`${m.location().url}: ${m.text()}`);
-      });
-      serviceWorker.on("console", (m) => {
-        if (m.type() === "error") errors.push(`service worker: ${m.text()}`);
-      });
-      await use(errors);
-      if (!testInfo.tags.includes("@live")) expect(errors, "errors in the console").toEqual([]);
-    },
-    { auto: true },
-  ],
-
-  offsiteRequests: [
-    async ({ context }, use, testInfo) => {
-      const offsite: string[] = [];
-      context.on("request", (r) => {
-        const { protocol, hostname } = new URL(r.url());
-        const web = protocol === "http:" || protocol === "https:";
-        if (web && !hostname.endsWith(".localhost")) offsite.push(r.url());
-      });
-      await use(offsite);
-      if (!testInfo.tags.includes("@live")) {
-        expect(offsite, "requests that left the machine").toEqual([]);
-      }
-    },
-    { auto: true },
-  ],
 });

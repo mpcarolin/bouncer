@@ -5,8 +5,8 @@ import type { LogEntry } from "../src/core/log.ts";
 import { expect, siteOf, test } from "./fixtures.ts";
 
 /**
- * What Bouncer's own path logged on the site, having checked that it stood down: anything it
- * logged is a deferral, with nothing clicked. (It logs every claim before it hides or clicks.)
+ * What Bouncer's own path logged on the site, having checked that it stood down: it logged
+ * nothing, or deferrals with nothing clicked. (It logs every claim before it hides or clicks.)
  */
 async function ownPathDeferred(
   readLog: () => Promise<LogEntry[]>,
@@ -34,7 +34,7 @@ async function acOutcome(readLog: () => Promise<LogEntry[]>, site: string): Prom
   return entry as LogEntry;
 }
 
-test("a Cookiebot-shaped CMP is refused by autoconsent, and Bouncer's own path stands down", async ({
+test("a Cookiebot-shaped CMP is refused by autoconsent, and Bouncer's own path clicks nothing", async ({
   page,
   pageUrl,
   readLog,
@@ -47,16 +47,51 @@ test("a Cookiebot-shaped CMP is refused by autoconsent, and Bouncer's own path s
   // autoconsent clicked the mock's own "Deny": the CMP recorded a refusal and closed its dialog.
   await expect(page.locator("#status")).toHaveText("consent: declined");
   await expect(page.locator("#site-cmp-dialog")).toBeHidden();
-  // Bouncer's own path found the dialog too, and stood down for autoconsent's detection.
+  // Whether Bouncer's watcher or autoconsent's detection saw the dialog first, Bouncer never
+  // claimed it: it logged a deferral, or nothing.
+  await ownPathDeferred(readLog, site);
+});
+
+test("a CMP detected after Bouncer has its dialog in hand: Bouncer stands down in its claim wait", async ({
+  page,
+  pageUrl,
+  readLog,
+  serviceWorker,
+}) => {
+  const site = siteOf("cookiebot-late");
+  // Counts the gate questions Bouncer's own path asks the background: one means it has found
+  // the dialog and is in its claim wait (it asks as the wait starts).
+  await serviceWorker.evaluate(() => {
+    const g = globalThis as unknown as { gated: number };
+    g.gated = 0;
+    chrome.runtime.onMessage.addListener((m) => {
+      if (m?.type === "ai" && m.op === "isConsentDialog") g.gated++;
+    });
+  });
+  await page.goto(`${pageUrl("cookiebot", "cookiebot-late")}?late`);
+  await expect
+    .poll(() => serviceWorker.evaluate(() => (globalThis as unknown as { gated: number }).gated), {
+      intervals: [50],
+    })
+    .toBeGreaterThan(0);
+  // Only now does the CMP's script run, so autoconsent detects it during Bouncer's claim wait.
+  await page.evaluate(() => (window as unknown as { initCmp(): void }).initCmp());
+
+  const entry = await acOutcome(readLog, site);
+  expect(entry).toMatchObject({ rule: "Cybotcookiebot", outcome: "dismissed" });
+  await expect(page.locator("#status")).toHaveText("consent: declined");
   const own = await ownPathDeferred(readLog, site);
   expect(own.map((e) => e.reason)).toEqual(["autoconsent_detected"]);
 });
 
-// Live, so skipped unless asked for: BOUNCER_LIVE=1 pnpm test:e2e --grep @live
-test("stackoverflow.com is refused by autoconsent", { tag: "@live" }, async ({ page, readLog }) => {
+// Live, so skipped unless asked for (no browser starts): BOUNCER_LIVE=1 pnpm test:e2e --grep @live
+test.describe("live sites", { tag: "@live" }, () => {
   test.skip(!process.env.BOUNCER_LIVE, "a live site: set BOUNCER_LIVE=1 to run it");
-  await page.goto("https://stackoverflow.com/");
-  const entry = await acOutcome(readLog, "stackoverflow.com");
-  expect(["dismissed", "dismissed_unverified"]).toContain(entry.outcome);
-  await ownPathDeferred(readLog, "stackoverflow.com");
+
+  test("stackoverflow.com is refused by autoconsent", async ({ page, readLog }) => {
+    await page.goto("https://stackoverflow.com/");
+    const entry = await acOutcome(readLog, "stackoverflow.com");
+    expect(["dismissed", "dismissed_unverified"]).toContain(entry.outcome);
+    await ownPathDeferred(readLog, "stackoverflow.com");
+  });
 });
