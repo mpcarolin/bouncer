@@ -1,8 +1,5 @@
-import { GATE_TEXT_CHARS } from "../../core/config.ts";
+import { GATE_TEXT_CHARS, LABEL_TEXT_CHARS } from "../../core/config.ts";
 import type { Control, Label, SerialisedBanner } from "../../core/types.ts";
-
-/** Banner text budget for labelling and corroboration (the spike's hybrid pipeline used 300). */
-export const LABEL_TEXT_CHARS = 300;
 
 // ---------------------------------------------------------------- input formatting
 // Ported from spike/bouncer-poc/variants.js (fmtInput) onto Bouncer's Control shape.

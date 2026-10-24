@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GATE_SCHEMA, GATE_SYSTEM } from "../../src/ai/prompt-api/prompts.ts";
+import {
+  corroborateInput,
+  GATE_SCHEMA,
+  GATE_SYSTEM,
+  gateInput,
+  labelInput,
+} from "../../src/ai/prompt-api/prompts.ts";
 import { PromptApiProvider } from "../../src/ai/prompt-api/provider.ts";
 import { TIMEOUT, timebox } from "../../src/ai/prompt-api/timebox.ts";
-import { CREATE_TIMEOUT_MS } from "../../src/core/config.ts";
+import { CREATE_TIMEOUT_MS, GATE_TEXT_CHARS, LABEL_TEXT_CHARS } from "../../src/core/config.ts";
+import type { Control } from "../../src/core/types.ts";
 import { b, btn, lnk, tog } from "../helpers/banner.ts";
 import { fakeLanguageModel, namedError } from "../helpers/fake-language-model.ts";
 import type { FakeOptions } from "../helpers/fake-language-model.ts";
@@ -292,6 +299,16 @@ describe("corroborate", () => {
 });
 
 describe("prompts", () => {
+  it("give the gate 150 characters of banner text and labelling and corroboration 300, from config", () => {
+    expect([GATE_TEXT_CHARS, LABEL_TEXT_CHARS]).toEqual([150, 300]);
+    const long = { ...banner, text: "x".repeat(400) };
+    const textOf = (input: string) => input.split("\n")[0];
+    expect(textOf(gateInput(long))).toBe(`Text: ${"x".repeat(GATE_TEXT_CHARS)}…`);
+    const label = `Text: ${"x".repeat(LABEL_TEXT_CHARS)}…`;
+    expect(textOf(labelInput(long, long.controls))).toBe(label);
+    expect(textOf(corroborateInput(long, long.controls[0] as Control, "reject"))).toBe(label);
+  });
+
   it("the gate prompt keeps the spec's two edits", () => {
     expect(GATE_SYSTEM).not.toContain('"Do not sell or share" choices');
     expect(GATE_SYSTEM).toContain("cookie preference centres)");

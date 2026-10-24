@@ -7,6 +7,8 @@ export const DETECT_THROTTLE_MS = 250;
 export const MAX_MODEL_CALLS_PER_PAGE = 8;
 export const LINK_THRESHOLD = 10;
 export const GATE_TEXT_CHARS = 150;
+/** Banner text budget for labelling and corroboration (the spike's hybrid pipeline used 300). */
+export const LABEL_TEXT_CHARS = 300;
 export const AVAILABILITY_TIMEOUT_MS = 1500;
 export const CREATE_TIMEOUT_MS = 30000;
 export const PROMPT_TIMEOUT_MS = 8000;
