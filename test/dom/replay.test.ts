@@ -19,7 +19,9 @@ import {
   fastClock,
   HIDDEN,
   type Harness,
+  prehideAtClaimWait,
   type StartOpts,
+  setAsideAt,
   start,
 } from "../helpers/pipeline.ts";
 
@@ -848,24 +850,9 @@ describe("learned rules (§2h)", () => {
   test("autoconsent's prehide lands on the banner during the claim wait: the rule is kept and replays once it lifts", async () => {
     const { rule } = await learn("custom-reject");
     mountPage("custom-reject");
-    let landed = false;
-    const clock: Clock = {
-      ...fastClock,
-      setTimeout: (fn, ms) => {
-        if (ms !== CLAIM_WAIT_MS || landed) return fastClock.setTimeout(fn, ms);
-        landed = true;
-        return fastClock.setTimeout(() => {
-          // As autoconsent's generic rules do to a home-grown banner, until its prehide timeout.
-          const style = document.createElement("style");
-          style.id = "autoconsent-prehide";
-          style.textContent = "#my-cookie-notice { opacity: 0 !important; }";
-          document.head.append(style);
-          setTimeout(() => style.remove(), 100);
-          fn();
-        }, ms);
-      },
-    };
     const sent: string[] = [];
+    const t0 = Date.now();
+    const clock = prehideAtClaimWait("#my-cookie-notice");
     const h = await start({ rules: [rule], clock, platform: recording(sent) });
 
     const e = await h.path.done;
@@ -879,6 +866,9 @@ describe("learned rules (§2h)", () => {
     expect(ruleChanges(sent)).toEqual([]);
     expect(await h.app.rules.get(site)).toEqual(rule);
     expect(await h.entries()).toEqual([e]);
+    const first = setAsideAt(e) ?? Number.NaN;
+    expect(first).toBeGreaterThanOrEqual(t0);
+    expect((e.t.found ?? 0) - first).toBeGreaterThanOrEqual(200);
   });
 
   test("autoconsent owns the page: the replay stands down at the claim, nothing touched, rule kept", async () => {

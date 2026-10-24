@@ -111,7 +111,7 @@ interface Run {
   mismatch?: string;
   /**
    * autoconsent's prehide came down on the candidate before anything was touched: the run ends
-   * unlogged, with no outcome, and the candidate is looked at again once it shows (`handle`).
+   * unlogged, with no outcome, and the candidate is looked at again once it shows (`setAside`).
    */
   aside?: true;
 }
@@ -196,6 +196,8 @@ export class OwnPath {
   /** Waiting candidates, by element: a later report of the same element replaces the earlier. */
   private readonly queue = new Map<Element, { c: Candidate; found: number }>();
   private readonly notConsent: Candidate[] = [];
+  /** When each candidate set aside for autoconsent's prehide was first found (`setAside`). */
+  private readonly asideSince = new WeakMap<Element, number>();
   private readonly waiters = new Set<() => void>();
   private started = false;
   private busy = false;
@@ -293,6 +295,16 @@ export class OwnPath {
     this.wake();
   }
 
+  /**
+   * autoconsent's prehide hides the candidate, before anything was touched: nothing is decided
+   * on it now, and the watcher reports it again once it shows. Its eventual entry notes when it
+   * was first found.
+   */
+  private setAside(c: Candidate, found: number): void {
+    if (!this.asideSince.has(c.el)) this.asideSince.set(c.el, found);
+    this.watcher?.retry(c);
+  }
+
   private refreshScroll(): void {
     try {
       this.scroll.refresh(modalNotConsentShowing(this.notConsent));
@@ -340,7 +352,7 @@ export class OwnPath {
   private async handle(c: Candidate, found: number): Promise<void> {
     // Gone before its turn: nothing to decide. Hidden by autoconsent's prehide, it is set aside.
     if (!c.el.isConnected || !isVisible(c.el)) {
-      if (c.el.isConnected && autoconsentHides(c.el)) this.watcher?.retry(c);
+      if (c.el.isConnected && autoconsentHides(c.el)) this.setAside(c, found);
       return;
     }
     const url = this.d.win.location.href;
@@ -360,6 +372,9 @@ export class OwnPath {
         notes: [],
       },
     };
+    // `t.found` is when this run found it; the note says when it was first found, before.
+    const first = this.asideSince.get(c.el);
+    if (first !== undefined) r.entry.notes.push(`set_aside:autoconsent_prehide:${first}`);
     let end: Ending;
     try {
       end = await this.run(r);
@@ -368,7 +383,7 @@ export class OwnPath {
       end = { outcome: r.acted ? "failed" : "unsure", reason: "exception" };
     }
     if (r.aside) {
-      this.watcher?.retry(c);
+      this.setAside(c, found);
       return;
     }
     await this.finish(r, end);

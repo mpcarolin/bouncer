@@ -4,6 +4,7 @@ import { MockProvider } from "../../src/ai/mock/provider.ts";
 import type { AiProvider, AiResult, AiStatus } from "../../src/core/ai.ts";
 import { RemoteAiProvider } from "../../src/core/ai-remote.ts";
 import { type BackgroundApp, startBackground } from "../../src/core/background-app.ts";
+import { CLAIM_WAIT_MS } from "../../src/core/config.ts";
 import type { LearnedRule } from "../../src/core/learned.ts";
 import type { LogEntry } from "../../src/core/log.ts";
 import { OwnPath } from "../../src/core/pipeline/own-path.ts";
@@ -216,3 +217,45 @@ export async function until(cond: () => boolean | Promise<boolean>, ms = 3000): 
 }
 
 export const byId = (id: string) => document.getElementById(id) as HTMLElement;
+
+/**
+ * Lays autoconsent's prehide (`style#autoconsent-prehide`) over `selector`, as its generic rules
+ * do to a home-grown banner until it has looked for a CMP, and returns what lifts it (its prehide
+ * timeout, or the end of its detection). `cleanup()` removes one left behind.
+ */
+export function prehide(selector: string): () => void {
+  const style = document.createElement("style");
+  style.id = "autoconsent-prehide";
+  style.textContent = `${selector} { opacity: 0 !important; z-index: -1 !important; pointer-events: none !important; }`;
+  document.head.append(style);
+  return () => style.remove();
+}
+
+/**
+ * `fastClock`, except that autoconsent's prehide lands on `selector` as the first claim wait ends
+ * (after the candidate's first checks, before anything is claimed or touched), and lifts 100 ms
+ * later. The claim wait is told apart by its length: it is the only one of the pipeline's timers
+ * that is CLAIM_WAIT_MS long (detection's are DETECT_WATCH_MS and its throttle), and on a
+ * replay nothing else marks it, since a replay neither asks the model nor sends a message during
+ * the wait.
+ */
+export function prehideAtClaimWait(selector: string): Clock {
+  let landed = false;
+  return {
+    ...fastClock,
+    setTimeout: (fn, ms) => {
+      if (ms !== CLAIM_WAIT_MS || landed) return fastClock.setTimeout(fn, ms);
+      landed = true;
+      return fastClock.setTimeout(() => {
+        setTimeout(prehide(selector), 100);
+        fn();
+      }, ms);
+    },
+  };
+}
+
+/** When the entry's candidate was first found, before it was set aside for autoconsent's prehide. */
+export function setAsideAt(e: LogEntry): number | undefined {
+  const note = e.notes.find((n) => n.startsWith("set_aside:autoconsent_prehide:"));
+  return note === undefined ? undefined : Number(note.split(":")[2]);
+}
