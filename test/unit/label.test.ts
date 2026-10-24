@@ -19,7 +19,7 @@ test("the AI is left the controls the rules leave open, never an absent one or a
   const banner = b([
     btn("Reject all"),
     btn("Continue to site"),
-    btn("Proceed", { absent: "submit" }),
+    btn("Proceed", { absent: "navigates" }),
     lnk("Cookie Policy"),
     tog("Marketing"),
   ]);

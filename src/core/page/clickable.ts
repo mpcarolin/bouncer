@@ -46,8 +46,11 @@ export function isFragmentLink(el: Element): boolean {
   return linkKind(el) === "fragment";
 }
 
-/** What activating this one element does by itself, ignoring its ancestors. */
-function ownReason(el: Element): AbsentReason | null {
+/**
+ * What activating this one element does by itself, ignoring its ancestors. `submit` is clickable,
+ * but only behind `safeClick`'s submit guard.
+ */
+function ownReason(el: Element): AbsentReason | "submit" | null {
   const kind = linkKind(el);
   if (kind === "navigates") return "navigates";
   if (kind !== "none") return null;
@@ -69,13 +72,26 @@ function ownReason(el: Element): AbsentReason | null {
  * does the same rule on every ancestor: a `div role=button` inside `<a href="/x">` has no
  * activation behaviour of its own, so `.click()` follows the link. The walk crosses open
  * shadow roots to the host, because a click on a control in a shadow tree bubbles out and the
- * host's link ancestor activates just the same. A reset ancestor is refused too (spec names
- * only submit): clicking inside it would reset the form, which is no consent action.
+ * host's link ancestor activates just the same. A reset ancestor is refused too: clicking inside
+ * it would reset the form, which is no consent action. A submit control (or one inside it) is
+ * clickable: `safeClick` cancels the form's native submission (§0's submit guard), and the walk
+ * goes on past it to any link or reset beyond.
  */
 export function clickability(el: Element): AbsentReason | null {
   for (let n: Element | null = el; n; n = parentOf(n)) {
     const r = ownReason(n);
-    if (r) return r;
+    if (r && r !== "submit") return r;
+  }
+  return null;
+}
+
+/**
+ * The submit control (a submit or image button with a form owner) that clicking `el` presses:
+ * `el` itself or its nearest such ancestor, across open shadow roots. Null if there is none.
+ */
+export function submitterOf(el: Element): HTMLButtonElement | HTMLInputElement | null {
+  for (let n: Element | null = el; n; n = parentOf(n)) {
+    if (ownReason(n) === "submit") return n as HTMLButtonElement | HTMLInputElement;
   }
   return null;
 }

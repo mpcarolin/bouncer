@@ -257,7 +257,7 @@ describe("runBenchmark: the labeller", () => {
     const f = fixture(
       "p1",
       "positive",
-      [btn("Reject all"), btn("Continue to site", { absent: "submit" }), lnk("Cookie Policy")],
+      [btn("Reject all"), btn("Continue to site", { absent: "navigates" }), lnk("Cookie Policy")],
       ["reject", "accept", "link"],
     );
     const { provider, asked } = stub({ labels: () => answer({ 2: "link" }) });

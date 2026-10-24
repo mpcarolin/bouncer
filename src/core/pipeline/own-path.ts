@@ -153,7 +153,7 @@ const modelEnding = (r: AiResult<unknown>): Ending => ({
 });
 
 /**
- * What the chooser would have clicked if controls that navigate or submit were clickable, when
+ * What the chooser would have clicked if controls that navigate or reset were clickable, when
  * that control is one of them: the reason the banner could not be refused (§0, "Log it as the
  * decision's reason").
  */
@@ -604,6 +604,7 @@ export class OwnPath {
           r.entry.clicked.push({ id: control.id, text: control.text, aiOnly });
         }
         if (click.hashGuardUsed) r.entry.notes.push("hash_guard");
+        if (click.submitGuard) r.entry.notes.push(`submit_guard:${click.submitGuard}`);
         return click;
       },
       toggled: (t) => r.entry.toggles.push(...t),

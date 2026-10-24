@@ -1,6 +1,7 @@
 export type Role = "button" | "link" | "toggle" | "other";
 
-export type AbsentReason = "navigates" | "submit" | "reset";
+/** Why §0 treats a control as absent. A submit control isn't: it is clicked behind a guard. */
+export type AbsentReason = "navigates" | "reset";
 
 export interface Control {
   id: number;

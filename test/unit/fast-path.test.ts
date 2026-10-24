@@ -35,7 +35,7 @@ describe("fastPathTarget", () => {
 
   test("a reject that is a link, or absent → null", () => {
     expect(target(banner(COOKIE_TEXT, [btn("Accept all"), lnk("Reject all")]))).toBeNull();
-    expect(target(banner(COOKIE_TEXT, [btn("Reject all", { absent: "submit" })]))).toBeNull();
+    expect(target(banner(COOKIE_TEXT, [btn("Reject all", { absent: "navigates" })]))).toBeNull();
   });
 
   test("text autoconsent's patterns don't match, or an excluded popup → null", () => {

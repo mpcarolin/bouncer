@@ -98,6 +98,33 @@ test("hash-link-reject: a reject link to #… is clicked without changing the ha
   expect(page.url()).toBe(before);
 });
 
+test("ons-banner: a reject that submits an accept-all form is clicked; nothing is requested or navigated", async ({
+  page,
+  pageUrl,
+  decided,
+}) => {
+  const submitted: string[] = [];
+  page.on("request", (r) => {
+    if (new URL(r.url()).pathname === "/accept-all") submitted.push(r.url());
+  });
+  let navigations = 0;
+  page.on("framenavigated", (f) => {
+    if (f === page.mainFrame()) navigations++;
+  });
+  await page.goto(pageUrl("ons-banner"));
+  const before = page.url();
+  const entry = await decided(siteOf("ons-banner"));
+  expect(texts(entry.clicked)).toEqual(["Reject additional cookies"]);
+  // The page's own submit handler took the click, so the guard had nothing to cancel.
+  expect(entry.notes).not.toContain("submit_guard:cancelled");
+  await expect(page.locator("#status")).toHaveText("consent: rejected");
+  // It answers with a confirmation in the banner, so the banner stays: not yet a dismissal.
+  expect(entry).toMatchObject({ outcome: "failed", reason: "not_gone" });
+  expect(submitted).toEqual([]);
+  expect(page.url()).toBe(before);
+  expect(navigations).toBe(1);
+});
+
 test("scroll-locked: the page scrolls again after the banner that locked it is refused", async ({
   page,
   pageUrl,

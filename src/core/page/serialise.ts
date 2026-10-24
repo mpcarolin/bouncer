@@ -147,7 +147,7 @@ export interface SerialiseOptions {
 
 /**
  * Describes a candidate for the labeller and the AI. `clickability` is the §0 test (Task 12):
- * a reason means the control would navigate or submit, so it is marked `absent`.
+ * a reason means the control would navigate or reset its form, so it is marked `absent`.
  * Toggles are not passed to it: §0's absence rules are about buttons and links, and a toggle
  * switches state in place. (An ancestor link would still navigate; the click guard in
  * §0 catches that at click time.)

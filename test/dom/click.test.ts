@@ -122,6 +122,91 @@ describe("safeClick", () => {
   });
 });
 
+describe("safeClick: the submit guard", () => {
+  const navigation = (window as unknown as { navigation: EventTarget }).navigation;
+  /** Navigations that got past the guard. Each is cancelled here, so the test page stays. */
+  let leaked: string[];
+  let stopLeaks: () => void;
+  beforeEach(() => {
+    leaked = [];
+    // Registered after the watch's own listener (the outer beforeEach), so it sees its cancel.
+    const onNavigate = (e: Event) => {
+      if (e.defaultPrevented) return;
+      leaked.push((e as Event & { destination: { url: string } }).destination.url);
+      e.preventDefault();
+    };
+    navigation.addEventListener("navigate", onNavigate);
+    stopLeaks = () => navigation.removeEventListener("navigate", onNavigate);
+  });
+  afterEach(() => stopLeaks());
+
+  /** Past the task in which a submission's navigation would begin. */
+  const settle = () => new Promise((r) => setTimeout(r, 50));
+  /** ONS's shape: the form's own action is accept-all. */
+  const reject = (html = "") => {
+    const box = mount(`<form id=f action="/accept-all" method="get"><input name=x value=1>
+      <button id=t>Reject additional cookies</button></form>${html}`);
+    return { form: box.querySelector("#f") as HTMLFormElement, t: box.querySelector("#t")! };
+  };
+
+  test("the page's own submit handlers run first and see defaultPrevented false", async () => {
+    const { form, t } = reject();
+    const seen: boolean[] = [];
+    const onDoc = (e: Event) => seen.push(e.defaultPrevented);
+    document.addEventListener("submit", onDoc);
+    form.addEventListener("submit", (e) => {
+      seen.push(e.defaultPrevented);
+      e.preventDefault(); // the page handles its own submission
+    });
+    try {
+      expect(safeClick(t, nav)).toEqual({ ok: true, hashGuardUsed: false });
+    } finally {
+      document.removeEventListener("submit", onDoc);
+    }
+    expect(seen).toEqual([false, true]);
+    await settle();
+    expect(leaked).toEqual([]);
+  });
+
+  test("a submission no handler cancels is cancelled by the guard: no navigation", async () => {
+    const { t } = reject();
+    expect(safeClick(t, nav)).toEqual({ ok: true, hashGuardUsed: false, submitGuard: "cancelled" });
+    await settle();
+    expect(leaked).toEqual([]);
+    expect(location.href).toBe(startUrl);
+  });
+
+  test("a handler that stops propagation without cancelling is caught by the backstop, after the watch is disposed", async () => {
+    const { form, t } = reject();
+    form.addEventListener("submit", (e) => e.stopImmediatePropagation());
+    const r = safeClick(t, nav);
+    nav.dispose(); // as the own path does, in the same turn as the click
+    // The verification's watch, made after the click, must not count the cancelled navigation.
+    const later = new NavigationWatch(window);
+    expect(r).toEqual({ ok: true, hashGuardUsed: false, submitGuard: "cancelled" });
+    await settle();
+    expect(leaked).toEqual([]);
+    expect(location.href).toBe(startUrl);
+    expect(later.started()).toBe(false);
+    later.dispose();
+  });
+
+  test("a form in an open shadow root is guarded too", async () => {
+    const host = mount("<div id=h></div>").querySelector("#h") as HTMLElement;
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML = `<form action="/accept-all"><button id=t>Reject</button></form>`;
+    expect(safeClick(root.querySelector("#t")!, nav)).toMatchObject({ submitGuard: "cancelled" });
+    await settle();
+    expect(leaked).toEqual([]);
+  });
+
+  test("a button outside any form, or of type button, gets no submit guard", () => {
+    const box = mount("<button id=a>x</button><form><button id=b type=button>x</button></form>");
+    expect(safeClick(box.querySelector("#a")!, nav)).toEqual({ ok: true, hashGuardUsed: false });
+    expect(safeClick(box.querySelector("#b")!, nav)).toEqual({ ok: true, hashGuardUsed: false });
+  });
+});
+
 describe("NavigationWatch", () => {
   test("beforeunload marks started; dispose stops listening", () => {
     const w = new NavigationWatch(window);

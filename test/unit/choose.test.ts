@@ -150,7 +150,7 @@ describe("choose", () => {
   });
 
   test("absent controls are ignored", () => {
-    expect(run([btn("Reject all", { absent: "submit" }), btn("Close")])).toEqual({
+    expect(run([btn("Reject all", { absent: "navigates" }), btn("Close")])).toEqual({
       kind: "close",
       target: 1,
     });

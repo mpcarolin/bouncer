@@ -85,24 +85,37 @@ describe("toggles", () => {
     expect(recheck(targets)).toBe(false);
   });
 
-  test("skips a switch whose click would submit its form, and carries on with the rest", () => {
-    // A <button> with no type is a submit button. `onsubmit` keeps a failing run from navigating.
-    const box = mount(`<form onsubmit="return false">
+  test("switches a switch whose click would submit its form, behind the submit guard", async () => {
+    // A <button> with no type is a submit button; the guard cancels the form's submission.
+    const box = mount(`<form id=f action="/accept-all">
       <button id=s role=switch aria-checked=true onclick="this.setAttribute('aria-checked','false')">Ads</button>
       <input id=c type=checkbox checked></form>`);
     const s = box.querySelector("#s") as Element;
     const c = box.querySelector("#c") as HTMLInputElement;
-    let clicks = 0;
-    s.addEventListener("click", () => clicks++);
-    const targets = [
-      { el: s, to: false },
-      { el: c, to: false },
-    ];
-    expect(setToggles(targets)).toEqual({ ok: true });
-    expect(clicks).toBe(0);
-    expect(readToggle(s)).toBe(true);
-    expect(c.checked).toBe(false);
-    expect(recheck(targets)).toBe(false);
+    let submitted = 0;
+    box.querySelector("#f")?.addEventListener("submit", () => submitted++);
+    // A navigation that got past the guard would take the test page away: cancel it, and count it.
+    const navigation = (window as unknown as { navigation: EventTarget }).navigation;
+    let leaked = 0;
+    const onNavigate = (e: Event) => {
+      if (!e.defaultPrevented) leaked++;
+      e.preventDefault();
+    };
+    navigation.addEventListener("navigate", onNavigate);
+    try {
+      const targets = [
+        { el: s, to: false },
+        { el: c, to: false },
+      ];
+      expect(setToggles(targets)).toEqual({ ok: true });
+      expect(submitted).toBe(1); // the page's own handler saw the submission
+      expect(recheck(targets)).toBe(true);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(leaked).toBe(0);
+      expect(location.href).toBe(startUrl);
+    } finally {
+      navigation.removeEventListener("navigate", onNavigate);
+    }
   });
 
   test("skips a switch inside a link that would navigate", () => {

@@ -1,0 +1,39 @@
+<!doctype html><html><head><meta charset="utf-8"><title>ONS-style banner: in the page's flow, its buttons submit an accept-all form</title><link rel="stylesheet" href="style.css">
+<style>.cookies-banner { background: #eee; padding: 16px; } .cookies-banner[hidden] { display: none; }</style></head>
+<body>
+<section><form id="global-cookie-message" class="cookies-banner" aria-label="cookie banner" action="/accept-all" method="get">
+  <div class="cookies-banner__wrapper" role="region" aria-label="Cookies banner">
+    <div class="cookies-banner__primary">
+      <h2>Cookies on this site</h2>
+      <p>Essential cookies make this website work. We'd like to set <a href="/cookies">additional cookies</a> to understand how you use the site.</p>
+      <button type="submit" name="cookies" value="accept" data-action="accept">Accept additional cookies</button>
+      <button type="submit" name="cookies" value="reject" data-action="reject">Reject additional cookies</button>
+      <a href="/cookies">Manage settings</a>
+    </div>
+    <div class="cookies-banner__confirmation" hidden>
+      <p>You have <span id="choice"></span> all additional cookies. You can <a href="/cookies">change your cookie preferences</a> at any time.</p>
+      <button type="button" class="js-hide-cookies-banner">Hide</button>
+    </div>
+  </div>
+</form></section>
+<header><h1>Statistics</h1></header>
+<main><p>Expected: the in-flow banner is found; "Reject additional cookies", a submit button of a form whose own action accepts all, is clicked behind the submit guard, so nothing is requested or navigated; the page's own handler records the refusal and shows a confirmation, whose "Hide" closes the banner: dismissed.</p></main>
+<div id="status">consent: unset</div>
+<script>
+// As ons.gov.uk does: the page's script handles the submission itself, then confirms the choice.
+const form = document.getElementById("global-cookie-message");
+form.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const reject = e.submitter?.dataset.action === "reject";
+  const optional = !reject;
+  document.cookie = `ons_cookie_policy={'essential':true,'settings':${optional},'usage':${optional},'campaigns':${optional}}; path=/`;
+  document.getElementById("status").textContent = `consent: ${reject ? "rejected" : "accepted"}`;
+  document.getElementById("choice").textContent = reject ? "rejected" : "accepted";
+  form.querySelector(".cookies-banner__primary").hidden = true;
+  form.querySelector(".cookies-banner__confirmation").hidden = false;
+});
+form.querySelector(".js-hide-cookies-banner").addEventListener("click", () => {
+  form.hidden = true;
+});
+</script>
+</body></html>

@@ -28,12 +28,12 @@ function isDisabled(el: Element): boolean {
 }
 
 /**
- * Clicks each toggle whose state differs from `to`, through `safeClick` (so it never scrolls).
- * A toggle is left alone, for `recheck` to fail, if it is unreadable or disabled, or if
- * `clickability` says a click would navigate or submit (a `<button role=switch>` in a form, a
- * switch inside a link). Stops at the first click that is not ok and returns why: after a
- * navigation or hash change nothing more should be clicked. A click that merely changes nothing
- * is left for `recheck` to catch.
+ * Clicks each toggle whose state differs from `to`, through `safeClick` (so it never scrolls, and
+ * a `<button role=switch>` in a form never submits it: the submit guard cancels that). A toggle is
+ * left alone, for `recheck` to fail, if it is unreadable or disabled, or if `clickability` says a
+ * click would navigate (a switch inside a link) or reset its form. Stops at the first click that
+ * is not ok and returns why: after a navigation or hash change nothing more should be clicked. A
+ * click that merely changes nothing is left for `recheck` to catch.
  */
 export function setToggles(targets: ToggleTarget[]): SetTogglesResult {
   for (const { el, to } of targets) {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { clickability } from "../../src/core/page/clickable.ts";
+import { clickability, submitterOf } from "../../src/core/page/clickable.ts";
 import { mount, unmountAll } from "../helpers/mount.ts";
 
 afterEach(unmountAll);
@@ -16,21 +16,25 @@ function mountTarget(html: string): Element {
 describe("clickability", () => {
   test.each([
     ['<button type="button">x</button>', null],
-    ["<form><button>x</button></form>", "submit"],
+    // A submit control is clickable: `safeClick` guards its click (§0's submit guard).
+    ["<form><button>x</button></form>", null],
     ["<button>x</button>", null],
-    ["<form id=f></form><button form=f>x</button>", "submit"],
+    ["<form id=f></form><button form=f>x</button>", null],
     ["<a>x</a>", null],
     ['<a href="javascript:void 0">x</a>', null],
     ['<a href="#cc">x</a>', null],
     ['<a href="/privacy">x</a>', "navigates"],
     ['<a href="#x" target=_blank>x</a>', "navigates"],
     ['<a href="/privacy"><div role=button>x</div></a>', "navigates"],
-    ["<form><input type=submit></form>", "submit"],
-    ["<form><input type=image></form>", "submit"],
+    ["<form><input type=submit></form>", null],
+    ["<form><input type=image></form>", null],
     ["<form><button type=reset>x</button></form>", "reset"],
     ["<div role=button>x</div>", null],
     ['<form><button type="button">x</button></form>', null],
-    ["<form><button><span>x</span></button></form>", "submit"],
+    ["<form><button><span>x</span></button></form>", null],
+    // A submit control doesn't hide what lies beyond it.
+    ['<a href="/p"><form><button>x</button></form></a>', "navigates"],
+    ["<form><button type=reset><span>x</span></button></form>", "reset"],
     ['<a href="#x"><div role=button>x</div></a>', null],
     ['<a href=" JavaScript:void 0">x</a>', null],
     ['<a href="java\tscript:void 0">x</a>', null],
@@ -55,6 +59,16 @@ describe("clickability", () => {
     } finally {
       base.remove();
     }
+  });
+
+  test("submitterOf names the submit control a click presses, if it has a form", () => {
+    const box = mount(`<form><button id=s><span id=in>x</span></button><input id=i type=image>
+      <button id=b type=button>x</button></form><button id=lone>x</button>`);
+    const el = (id: string) => box.querySelector(`#${id}`) as Element;
+    expect(submitterOf(el("in"))).toBe(el("s"));
+    expect(submitterOf(el("i"))).toBe(el("i"));
+    expect(submitterOf(el("b"))).toBeNull();
+    expect(submitterOf(el("lone"))).toBeNull();
   });
 
   test("ancestor rule crosses a shadow boundary", () => {

@@ -207,14 +207,45 @@ describe("OwnPath, stage 1", () => {
     expect(document.querySelector("style[data-bouncer]")).not.toBeNull();
   });
 
-  test("form-submit reject → absent; logged reason submit", async () => {
+  test("form-submit reject → clicked behind the submit guard; the page's handler refuses → dismissed", async () => {
     mountPage("form-reject");
     const h = await start();
     const e = await h.path.done;
-    expect(e).toMatchObject({ outcome: "no_option", reason: "submit", clicked: [] });
-    expect(e.labels?.[0]).toMatchObject({ label: "reject", source: "regex" });
-    expect(h.clicks).toEqual([]);
-    expect(window.__clicked).toBeUndefined();
+    expect(e).toMatchObject({
+      outcome: "dismissed",
+      verification: "verified",
+      clicked: [{ text: "Reject all", aiOnly: false }],
+    });
+    expect(e.notes).not.toContain("submit_guard:cancelled");
+    expect(window.__clicked).toBe("submitted");
+  });
+
+  test("form-submit reject the page doesn't handle → the guard cancels it, noted; failed, restored", async () => {
+    // A navigation that got past the guard would take the test page away: cancel it, and count it.
+    const navigation = (window as unknown as { navigation: EventTarget }).navigation;
+    let leaked = 0;
+    const onNavigate = (e: Event) => {
+      if (!e.defaultPrevented) leaked++;
+      e.preventDefault();
+    };
+    navigation.addEventListener("navigate", onNavigate);
+    try {
+      mount(`<div id="cookie-native" style="position:fixed;bottom:0;left:0;right:0;z-index:9999">
+        We use cookies for analytics. <form action="/accept-all"><button>Reject all</button></form>
+        <button type="button">Accept all</button></div>`);
+      const h = await start();
+      const e = await h.path.done;
+      expect(e).toMatchObject({
+        outcome: "failed",
+        reason: "not_gone",
+        clicked: [{ text: "Reject all", aiOnly: false }],
+      });
+      expect(e.notes).toEqual(expect.arrayContaining(["submit_guard:cancelled", "restored"]));
+      await sleep(50);
+      expect(leaked).toBe(0);
+    } finally {
+      navigation.removeEventListener("navigate", onNavigate);
+    }
   });
 
   test("acDetected during wait → deferred, nothing touched", async () => {
