@@ -118,7 +118,12 @@ export function choose(
   return { kind: "unsure", reason: "no_usable_control" };
 }
 
-const NEEDS_CORROBORATION = new Set<Label>(["reject", "save", "settings"]);
+/** The labels an AI-only control may carry into a click only once corroboration confirms them. */
+export const NEEDS_CORROBORATION: ReadonlySet<Label> = new Set<Label>([
+  "reject",
+  "save",
+  "settings",
+]);
 
 /** `unsure` reasons that come from the model, not from the controls (a corroboration's, say). */
 export const MODEL_REASONS: ReadonlySet<string> = new Set(["model_timeout", "model_error"]);

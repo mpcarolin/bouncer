@@ -2,7 +2,12 @@ import { existsSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PageName } from "../../src/core/platform.ts";
 import { chromeBackground } from "../../src/platform/chrome/background.ts";
-import { PAGE_SOURCES, pageFile } from "../../src/platform/chrome/pages.ts";
+import {
+  DEV_PAGE_SOURCES,
+  PAGE_SOURCES,
+  pageFile,
+  pagesFor,
+} from "../../src/platform/chrome/pages.ts";
 import { EXTENSION_ORIGIN, installFakeChrome } from "../helpers/fake-chrome.ts";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -21,5 +26,20 @@ describe("extension pages", () => {
     expect(fc.created.map((c) => c.url)).toEqual(
       pages.map((page) => `${EXTENSION_ORIGIN}/${pageFile(page)}`),
     );
+  });
+});
+
+describe("the benchmark page", () => {
+  const names = (mode: string) => pagesFor(mode).map(([page]) => page);
+
+  it("has the source HTML the development build takes as its input, emitted as bench.html", () => {
+    expect(existsSync(DEV_PAGE_SOURCES.bench)).toBe(true);
+    expect(pageFile("bench")).toBe("bench.html");
+  });
+
+  it("is emitted by the development build only", () => {
+    expect(names("development")).toEqual(["settings", "onboarding", "bench"]);
+    expect(names("production")).toEqual(["settings", "onboarding"]);
+    expect(names("e2e")).toEqual(["settings", "onboarding"]);
   });
 });

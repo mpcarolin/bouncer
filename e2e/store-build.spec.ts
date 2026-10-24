@@ -1,5 +1,6 @@
 // The Store build (`pnpm build` → dist/chrome) against what may ship: no mock provider, no
-// benchmark page, and exactly the permissions Task 1 set. No browser is needed.
+// benchmark page, and exactly the permissions Task 1 set. No browser is needed. The e2e build
+// must not carry the benchmark either.
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
@@ -33,8 +34,12 @@ test("the e2e build does contain it, so the check above can't pass for want of a
   expect((await filesContaining(E2E, MOCK_MARKER)).length).toBeGreaterThan(0);
 });
 
-test("the Store build has no benchmark page", async () => {
-  expect((await files(STORE)).filter((f) => f.endsWith("bench.html"))).toEqual([]);
+test("neither the Store build nor the e2e build has the benchmark page, or any of its code", async () => {
+  for (const dir of [STORE, E2E]) {
+    const benchFiles = (await files(dir)).filter((f) => /bench/i.test(f));
+    expect(benchFiles, dir).toEqual([]);
+    expect(await filesContaining(dir, "runBenchmark"), dir).toEqual([]);
+  }
 });
 
 test("the Store build's manifest asks for exactly storage, scripting and all URLs", async () => {

@@ -13,5 +13,13 @@ export function h<K extends keyof HTMLElementTagNameMap>(
   return el;
 }
 
+/** Offers `text` to the browser as a JSON file download. */
+export function saveFile(name: string, text: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+  const link = h("a", { href: url, download: name });
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
 /** What a field shows when a decision has nothing to say for it. */
 export const NONE = "–";

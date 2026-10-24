@@ -1,6 +1,6 @@
 import type { DecisionLog, LogEntry } from "../../core/log.ts";
 import type { Outcome } from "../../core/types.ts";
-import { h, NONE } from "../dom.ts";
+import { h, NONE, saveFile } from "../dom.ts";
 
 /** The spec's names for the outcomes. `no_option` and `unsure` stay distinct here as in the code. */
 const OUTCOMES: Record<Outcome | "working", string> = {
@@ -106,14 +106,6 @@ const COLUMNS = [
   "Verification",
   "Outcome",
 ];
-
-/** Offers `text` to the browser as a file download. */
-function saveFile(name: string, text: string): void {
-  const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-  const link = h("a", { href: url, download: name });
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-}
 
 /**
  * Fills `box` with the decision log, newest first, and a button that exports it as JSON. The log

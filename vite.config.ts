@@ -1,17 +1,15 @@
 import { resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
-import type { PageName } from "./src/core/platform.ts";
-import { PAGE_SOURCES, pageFile } from "./src/platform/chrome/pages.ts";
+import { pageFile, pagesFor } from "./src/platform/chrome/pages.ts";
 
 const root = import.meta.dirname;
-const pages = Object.entries(PAGE_SOURCES) as [PageName, string][];
 
 /**
  * Vite emits a page's HTML at its source path. `openExtensionPage` opens `pageFile(page)`, so
  * this moves each one there. The scripts and styles the HTML names are absolute from the
  * extension's root, so they still resolve.
  */
-function pagesAtRoot(): Plugin {
+function pagesAtRoot(pages: ReturnType<typeof pagesFor>): Plugin {
   return {
     name: "bouncer:pages-at-root",
     enforce: "post",
@@ -26,13 +24,15 @@ function pagesAtRoot(): Plugin {
   };
 }
 
-// The background service worker (ES module) and the extension pages (settings, onboarding, and
-// later bench) are `input` entries; the content script is built separately as an IIFE.
+// The background service worker (ES module) and the extension pages (settings, onboarding, and in
+// the development build the benchmark) are `input` entries; the content script is built separately
+// as an IIFE.
 export default defineConfig(({ mode }) => {
   const outDir = process.env.BOUNCER_OUT_DIR ?? "dist/chrome";
+  const pages = pagesFor(mode);
   return {
     publicDir: false,
-    plugins: [pagesAtRoot()],
+    plugins: [pagesAtRoot(pages)],
     define: {
       "import.meta.env.VITE_AI_PROVIDER": JSON.stringify(
         process.env.VITE_AI_PROVIDER ?? (mode === "e2e" ? "mock" : "chrome"),
