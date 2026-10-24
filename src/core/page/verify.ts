@@ -80,8 +80,11 @@ export interface VerifyOptions {
   goneMs?: number;
   stayMs?: number;
   nav: NavigationWatch;
-  /** True when the site has put the banner back as a new element; checked every tick. */
-  reappeared?: () => boolean;
+  /**
+   * True when the site has put the banner back as a new element. Checked every tick, where a
+   * recent answer may stand (`fresh` false), and once more, `fresh`, before a pass.
+   */
+  reappeared?: (fresh: boolean) => boolean;
 }
 
 export interface VerifyResult {
@@ -126,7 +129,7 @@ export async function verifyDismissed(els: Element[], o: VerifyOptions): Promise
     lastCheck = performance.now();
     if (o.nav.started()) return { ok: false, reason: "navigation" };
     if (els.some(autoconsentStyleTouches)) return { ok: false, reason: "autoconsent_style" };
-    if (o.reappeared?.()) return { ok: false, reason: "came_back" };
+    if (o.reappeared?.(false)) return { ok: false, reason: "came_back" };
     return null;
   };
   try {
@@ -145,6 +148,8 @@ export async function verifyDismissed(els: Element[], o: VerifyOptions): Promise
       if (stop) return stop;
       if (!els.every(isGoneBySite)) return { ok: false, reason: "came_back" };
     }
+    // The ticks' answers may have stood on an earlier scan; a pass doesn't.
+    if (o.reappeared?.(true)) return { ok: false, reason: "came_back" };
     return { ok: true };
   } finally {
     mo.disconnect();

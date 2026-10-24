@@ -40,8 +40,8 @@ import { fastPathTarget } from "./fast-path.ts";
 import {
   modalNotConsentShowing,
   overlayStillShowing,
-  reappeared,
   stillSame,
+  throttledReappeared,
 } from "./page-checks.ts";
 import { NOT_THE_BANNER, recordBanner, replay } from "./replay.ts";
 import {
@@ -659,6 +659,7 @@ export class OwnPath {
   ): Promise<{ ok: boolean; reason?: string }> {
     const els = this.touched(r);
     const nav = new NavigationWatch(this.d.win);
+    const cameBack = throttledReappeared(this.d.doc, keys, els, () => this.clock.now());
     let goneAt: number | undefined;
     try {
       const v = await verifyDismissed(els, {
@@ -666,13 +667,13 @@ export class OwnPath {
         goneMs: this.d.verify?.goneMs,
         stayMs: this.d.verify?.stayMs,
         // Called on every check, so it also notes when the banner was first seen gone.
-        reappeared: () => {
+        reappeared: (fresh) => {
           try {
             if (goneAt === undefined && els.every(isGoneBySite)) goneAt = this.clock.now();
           } catch {
             // only a timing; verification decides
           }
-          return reappeared(this.d.doc, keys, els);
+          return cameBack(fresh);
         },
       });
       if (v.ok) r.entry.t.gone = goneAt ?? this.clock.now();

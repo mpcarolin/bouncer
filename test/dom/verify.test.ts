@@ -209,6 +209,21 @@ describe("verifyDismissed", () => {
     document.querySelector("#clone")?.remove();
     expect(await run()).toEqual({ ok: true });
   });
+  test("its last reappeared() check is a fresh one: a new element only that one sees is came_back", async () => {
+    const b = mk();
+    setTimeout(() => b.remove(), 50);
+    const asked: boolean[] = [];
+    const reappeared = (fresh: boolean) => {
+      asked.push(fresh);
+      return fresh;
+    };
+    expect(await verifyDismissed([b], { ...fast, nav, reappeared })).toEqual({
+      ok: false,
+      reason: "came_back",
+    });
+    expect(asked.at(-1)).toBe(true);
+    expect(asked.slice(0, -1).every((fresh) => !fresh)).toBe(true);
+  });
   test("no elements is not a dismissal", async () => {
     expect(await verifyDismissed([], { ...fast, nav })).toEqual({ ok: false, reason: "not_gone" });
   });

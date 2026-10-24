@@ -1,5 +1,6 @@
 // Read-only checks the pipeline makes on the live page around an action (§2g). None of them
 // touches the page.
+import { DETECT_THROTTLE_MS } from "../config.ts";
 import { clickability } from "../page/clickable.ts";
 import { type Candidate, findCandidates, isModal, isOverlay } from "../page/detect.ts";
 import { deepAll, isVisible, parentOf } from "../page/dom.ts";
@@ -54,6 +55,29 @@ export function reappeared(
   } catch {
     return false;
   }
+}
+
+/**
+ * `reappeared`, for `verifyDismissed`, which asks on every tick and DOM mutation (as often as
+ * every 50 ms, for seconds): the page is rescanned at most once per DETECT_THROTTLE_MS, and the
+ * last answer stands in between. A `fresh` check always rescans.
+ */
+export function throttledReappeared(
+  doc: Document,
+  keys: ReadonlySet<string>,
+  verified: readonly Element[],
+  now: () => number,
+): (fresh: boolean) => boolean {
+  let scannedAt = Number.NEGATIVE_INFINITY;
+  let last = false;
+  return (fresh) => {
+    const t = now();
+    if (fresh || t - scannedAt >= DETECT_THROTTLE_MS) {
+      scannedAt = t;
+      last = reappeared(doc, keys, verified);
+    }
+    return last;
+  };
 }
 
 /** A `not_consent` candidate that is visible and modal (§2a): the scroll record pauses for it. */
