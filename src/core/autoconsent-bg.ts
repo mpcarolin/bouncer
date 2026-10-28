@@ -50,18 +50,22 @@ export function acConfig(enabled: boolean): AutoconsentConfig {
 
 /**
  * - `optingOut`: `optOut` sent, waiting for `optOutResult` until the deadline.
+ * - `finishing`: `optOutResult` succeeded; waiting, under the same deadline, for the document's
+ *   `autoconsentDone`, which says the rule's opt-out is complete.
  * - `selfTesting`: opted out, `selfTest` sent, waiting for its result until a fresh deadline.
  * - `timedOut`: the deadline passed first. Logged `failed`, but a late success still counts.
  * - `ended`: the outcome is final.
  */
-type Phase = "optingOut" | "selfTesting" | "timedOut" | "ended";
+type Phase = "optingOut" | "finishing" | "selfTesting" | "timedOut" | "ended";
 
 interface OptOut {
   /** The log entry; absent if it couldn't be written. */
   entryId?: string;
   phase: Phase;
-  /** Epoch ms, from the injected clock. Set only while `optingOut` or `selfTesting`. */
+  /** Epoch ms, from the injected clock. Set only while `optingOut`, `finishing` or `selfTesting`. */
   deadline?: number;
+  /** `optOutResult` asked for a self-test: it is sent on `autoconsentDone`. */
+  selfTest?: true;
   /** autoconsent's styles were put back while its opt-out still ran: it may hide again. */
   watching?: boolean;
 }
@@ -254,12 +258,14 @@ export class AutoconsentHost {
         return this.popupFound(msg.cmp, from, s, frame);
       case "optOutResult":
         return this.optOutResult(msg.result === true, msg.scheduleSelfTest === true, s, from);
+      case "autoconsentDone":
+        return this.autoconsentDone(s, from.frameId);
       case "selfTestResult":
         return this.selfTestResult(msg.result === true, s, from.frameId);
       case "report":
         return this.report(msg.state, s, from.frameId);
       default:
-        // visualDelay, optInResult, autoconsentDone, autoconsentError: nothing to do.
+        // visualDelay, optInResult, autoconsentError: nothing to do.
         return;
     }
   }
@@ -392,31 +398,39 @@ export class AutoconsentHost {
     s: Step,
     from: Sender,
   ): Promise<void> {
-    const { frameId } = from;
+    const o = s.tab.frames[from.frameId]?.optOut;
+    if (o?.phase !== "optingOut") return; // a late result: `autoconsentDone` says if it succeeded
+    if (!ok) return this.fail(s, from.frameId, o, "opt_out_failed", false);
+    // autoconsent's own order (its docs/api.md, and its test runner): the rule may be one stage
+    // of several, so nothing is concluded, and no `selfTest` is sent, before `autoconsentDone`.
+    o.phase = "finishing";
+    if (scheduleSelfTest) o.selfTest = true;
+  }
+
+  /**
+   * autoconsent sends this, after a successful `optOutResult`, only once the rule's last stage is
+   * done. It never comes after a failed one, so a late one is a late success.
+   */
+  private async autoconsentDone(s: Step, frameId: number): Promise<void> {
     const o = s.tab.frames[frameId]?.optOut;
-    if (!o) return;
     const now = this.clock.now();
-    if (o.phase === "optingOut") {
-      if (!ok) return this.fail(s, frameId, o, "opt_out_failed", false);
-      if (!scheduleSelfTest) {
-        return this.succeed(s, frameId, o, "dismissed_unverified", {
-          verification: "no_self_test",
-          t: { gone: now },
-        });
-      }
-      o.phase = "selfTesting";
-      o.deadline = now + AC_OPTOUT_TIMEOUT_MS;
-      this.arm(s.tabId, frameId, o.deadline);
-      this.toFrame(s, frameId, { type: "selfTest" });
-      await this.logPatch(o, { t: { gone: now } });
-      return;
-    }
-    if (o.phase === "timedOut" && ok) {
+    if (o?.phase === "timedOut") {
       // It finished after all. What it hid stays hidden.
       o.watching = false;
       return this.succeed(s, frameId, o, "dismissed_late", { t: { gone: now } });
     }
-    // A late failure: the put-back already happened, and the `report` watch handles any re-hide.
+    if (o?.phase !== "finishing") return;
+    if (!o.selfTest) {
+      return this.succeed(s, frameId, o, "dismissed_unverified", {
+        verification: "no_self_test",
+        t: { gone: now },
+      });
+    }
+    o.phase = "selfTesting";
+    o.deadline = now + AC_OPTOUT_TIMEOUT_MS;
+    this.arm(s.tabId, frameId, o.deadline);
+    this.toFrame(s, frameId, { type: "selfTest" });
+    await this.logPatch(o, { t: { gone: now } });
   }
 
   private async selfTestResult(ok: boolean, s: Step, frameId: number): Promise<void> {
@@ -438,6 +452,16 @@ export class AutoconsentHost {
       this.toFrame(s, 0, { type: "acDetectionEnded" });
     }
     const o = s.tab.frames[frameId]?.optOut;
+    if (o?.phase === "finishing" && lifecycle === "optOutSucceeded") {
+      // Sent in place of `autoconsentDone`: the rule is one stage of several (intermediate). In
+      // autoconsent 16.59 only TrustArc-top is ever one, when its banner has no reject button: it
+      // hides the banner and the preference centre and opens the centre, for TrustArc-newcm to
+      // finish. That rule runs only in this same document, whose one detection pass ended before
+      // the centre existed (and the hiding keeps its popup from showing), so nothing finishes the
+      // opt-out. Waiting out the deadline would only keep both hidden until TrustArc-top's own
+      // cleanup shows them again ten seconds on.
+      return this.fail(s, frameId, o, "opt_out_unfinished", false);
+    }
     if (!o?.watching) return;
     if (lifecycle === "optOutFailed") {
       // The opt-out ended without success, after autoconsent's `hide` steps may have run again.
@@ -496,6 +520,8 @@ export class AutoconsentHost {
         verification: "self_test_unanswered",
       });
     }
+    // No result, or (`finishing`) a success never followed by `autoconsentDone`: not a refusal,
+    // and autoconsent may still be at work, so a late `autoconsentDone` still counts.
     return this.fail(s, frameId, o, "opt_out_timeout", true);
   }
 
@@ -514,7 +540,7 @@ export class AutoconsentHost {
     const phase = o.phase;
     this.stop(tabId, frameId, o, "ended");
     o.watching = false;
-    if (phase === "optingOut") {
+    if (phase === "optingOut" || phase === "finishing") {
       await this.logPatch(o, { outcome: "failed", reason });
     } else if (phase === "selfTesting") {
       await this.logPatch(o, {

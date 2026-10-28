@@ -84,6 +84,34 @@ test("a CMP detected after Bouncer has its dialog in hand: Bouncer stands down i
   expect(own.map((e) => e.reason)).toEqual(["autoconsent_detected"]);
 });
 
+test("TrustArc-top with no reject button: its intermediate opt-out is failed at once, with no self-test, and put back", async ({
+  page,
+  pageUrl,
+  readLog,
+}) => {
+  const site = siteOf("trustarc-intermediate");
+  await page.goto(pageUrl("trustarc-intermediate"));
+  const entry = await acOutcome(readLog, site);
+  expect(entry).toMatchObject({
+    rule: "TrustArc-top",
+    outcome: "failed",
+    reason: "opt_out_unfinished",
+  });
+  // autoconsent opened the preference centre; nothing refused in it.
+  await expect(page.locator("#status")).toHaveText("centre: open");
+  // Its styles were removed: the banner and the centre it opened are on show again.
+  await expect(page.locator("#truste-consent-track")).toBeVisible();
+  await expect(page.locator(".truste_popframe")).toBeVisible();
+  await expect(page.locator("style#autoconsent-css-rules, style#autoconsent-prehide")).toHaveCount(
+    0,
+  );
+  // No self-test ran: it would have read the preference cookie, and failed.
+  expect(
+    await page.evaluate(() => (window as { __selfTested?: boolean }).__selfTested),
+  ).toBeUndefined();
+  await ownPathDeferred(readLog, site);
+});
+
 // Live, so skipped unless asked for (no browser starts): BOUNCER_LIVE=1 pnpm test:e2e --grep @live
 test.describe("live sites", { tag: "@live" }, () => {
   test.skip(!process.env.BOUNCER_LIVE, "a live site: set BOUNCER_LIVE=1 to run it");
@@ -93,5 +121,20 @@ test.describe("live sites", { tag: "@live" }, () => {
     const entry = await acOutcome(readLog, "stackoverflow.com");
     expect(["dismissed", "dismissed_unverified"]).toContain(entry.outcome);
     await ownPathDeferred(readLog, "stackoverflow.com");
+  });
+
+  // TrustArc-top's intermediate opt-out (no reject button): nothing in autoconsent finishes it,
+  // so it is reported unfinished as soon as autoconsent says so, never self-tested too early.
+  test("redis.io: TrustArc-top's intermediate opt-out is failed as unfinished", async ({
+    page,
+    readLog,
+  }) => {
+    await page.goto("https://redis.io/");
+    const entry = await acOutcome(readLog, "redis.io");
+    expect(entry).toMatchObject({
+      rule: "TrustArc-top",
+      outcome: "failed",
+      reason: "opt_out_unfinished",
+    });
   });
 });

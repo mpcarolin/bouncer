@@ -1,0 +1,29 @@
+<!doctype html><html><head><meta charset="utf-8"><title>TrustArc-shaped banner with no reject button</title><link rel="stylesheet" href="style.css">
+<style>
+#truste-consent-track { position: fixed; left: 0; right: 0; bottom: 0; background: #222; color: #fff; padding: 16px; z-index: 9999; }
+.truste_popframe { position: fixed; inset: 10% 20%; background: #fff; border: 1px solid #999; padding: 16px; z-index: 10000; }
+</style>
+<script>
+// What autoconsent's TrustArc-top (lib/cmps/trustarc-top.ts, 16.59) reads, as on redis.io: the
+// banner (#truste-consent-track) with "Cookie Preferences" (#truste-show-consent) and no
+// #truste-consent-required, so its opt-out is intermediate: it hides the banner and the centre,
+// clicks "Cookie Preferences", and leaves the rest to TrustArc-newcm, which never runs. Its
+// self-test (EVAL_TRUSTARC_TOP) reads `truste.eu.bindMap.prefCookie`: the getter records a read.
+window.truste = { eu: { bindMap: { get prefCookie() { window.__selfTested = true; return undefined; } } } };
+function openCentre() {
+  // The preference centre TrustArc-newcm would act in, made when it is opened, as on redis.io.
+  document.body.insertAdjacentHTML('beforeend',
+    '<div class="truste_popframe trustarc_newcm_container" id="pop-frame1"><h2>Cookie preferences</h2>' +
+    '<a href="#" class="required" onclick="decide(); return false">Required Only</a> <a href="#" class="call">Accept All</a></div>');
+  document.getElementById('status').textContent = 'centre: open';
+}
+function decide() {
+  document.getElementById('status').textContent = 'consent: required only';
+  document.getElementById('pop-frame1').remove();
+  document.getElementById('truste-consent-track').remove();
+}
+</script></head>
+<body><main><h1>TrustArc-shaped banner with no reject button</h1><p>Expected: autoconsent's TrustArc-top opts out in its intermediate way: it opens the preference centre and nothing finishes the refusal. Bouncer logs it failed at once (opt_out_unfinished), runs no self-test, and puts the banner back.</p></main>
+<div id="status">untouched</div>
+<div id="truste-consent-track"><div id="truste-consent-content">We use cookies to improve your experience and for analytics. <button id="truste-show-consent" onclick="openCentre()">Cookie Preferences</button> <button id="truste-consent-button">Accept Cookies</button></div></div>
+</body></html>

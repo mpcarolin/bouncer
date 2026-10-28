@@ -61,6 +61,15 @@ const selfTestResult = (result: boolean): AcMessage => ({
   result,
   url: PAGE,
 });
+/** Sent by autoconsent right after a successful `optOutResult`, unless the rule is intermediate. */
+const autoconsentDone = (): AcMessage => ({
+  type: "autoconsentDone",
+  cmp: "onetrust",
+  isCosmetic: false,
+  url: PAGE,
+  duration: 120,
+  totalClicks: 1,
+});
 /**
  * The timers of one service-worker lifetime, over the (faked) global ones. `stop()` drops them
  * all, as Chrome does when it stops the worker; the time itself goes on.
@@ -398,6 +407,7 @@ describe("outcomes", () => {
     await w.open();
     await w.from(w.cmp, popupFound());
     await w.from(w.cmp, optOutResult(true, true));
+    await w.from(w.cmp, autoconsentDone());
     expect(w.cmp.inbox).toEqual([{ type: "optOut" }, { type: "selfTest" }]);
     expect((await w.entry()).outcome).toBe("working");
     await w.from(w.cmp, selfTestResult(true));
@@ -414,6 +424,7 @@ describe("outcomes", () => {
     await u.open();
     await u.from(u.top, popupFound());
     await u.from(u.top, optOutResult(true, false));
+    await u.from(u.top, autoconsentDone());
     expect(await u.entry()).toMatchObject({
       outcome: "dismissed_unverified",
       verification: "no_self_test",
@@ -451,6 +462,7 @@ describe("outcomes", () => {
     await s.open();
     await s.from(s.cmp, popupFound());
     await s.from(s.cmp, optOutResult(true, true));
+    await s.from(s.cmp, autoconsentDone());
     await s.from(s.cmp, selfTestResult(false));
     expect(await s.entry()).toMatchObject({ outcome: "failed", reason: "self_test_failed" });
     expect(count(s.cmp, "restoreAcStyles")).toBe(1);
@@ -485,6 +497,9 @@ describe("outcomes", () => {
     ]);
 
     await w.from(w.cmp, optOutResult(true));
+    // The result alone isn't the end of the opt-out: autoconsentDone is.
+    expect((await w.entry()).outcome).toBe("failed");
+    await w.from(w.cmp, autoconsentDone());
     expect(await w.entry()).toMatchObject({ outcome: "dismissed_late" });
     expect(w.top.inbox.at(-1)).toEqual({ type: "acOutcome", outcome: "dismissed_late" });
     // A success: what autoconsent hid stays hidden.
@@ -516,6 +531,7 @@ describe("outcomes", () => {
     await w.wait(AC_OPTOUT_TIMEOUT_MS - 1);
     // The self-test gets a deadline of its own, from the moment it is asked for.
     await w.from(w.cmp, optOutResult(true, true));
+    await w.from(w.cmp, autoconsentDone());
     await w.wait(AC_OPTOUT_TIMEOUT_MS - 1);
     expect((await w.entry()).outcome).toBe("working");
     await w.wait(1);
@@ -525,6 +541,61 @@ describe("outcomes", () => {
     });
     expect(count(w.cmp, "restoreAcStyles")).toBe(0);
     expect(w.top.inbox.at(-1)).toEqual({ type: "acOutcome", outcome: "dismissed_unverified" });
+  });
+});
+
+describe("the order autoconsent finishes in", () => {
+  it("selfTest goes out on autoconsentDone, not on optOutResult", async () => {
+    const w = new World();
+    await w.open();
+    await w.from(w.cmp, popupFound());
+    await w.from(w.cmp, optOutResult(true, true));
+    expect(w.cmp.inbox).toEqual([{ type: "optOut" }]);
+    expect((await w.entry()).outcome).toBe("working");
+    await w.from(w.cmp, autoconsentDone());
+    expect(w.cmp.inbox).toEqual([{ type: "optOut" }, { type: "selfTest" }]);
+    await w.from(w.cmp, selfTestResult(true));
+    expect(await w.entry()).toMatchObject({
+      outcome: "dismissed",
+      verification: "self_test_passed",
+    });
+  });
+
+  it("an intermediate stage (optOutSucceeded in place of autoconsentDone) is failed at once: no selfTest, styles put back", async () => {
+    const w = new World();
+    await w.open();
+    await w.from(w.top, popupFound("TrustArc-top"));
+    await w.from(w.top, optOutResult(true, true));
+    await w.from(w.top, report("optOutSucceeded", ["TrustArc-top"]));
+    expect(await w.entry()).toMatchObject({
+      rule: "TrustArc-top",
+      outcome: "failed",
+      reason: "opt_out_unfinished",
+    });
+    expect(types(w.top)).toEqual(["optOut", "acPopupFound", "restoreAcStyles", "acOutcome"]);
+    // Nothing was left waiting: no self-test, no second put-back, no timeout.
+    await w.wait(AC_OPTOUT_TIMEOUT_MS * 2);
+    expect(count(w.top, "selfTest")).toBe(0);
+    expect(count(w.top, "restoreAcStyles")).toBe(1);
+    expect((await w.entry()).reason).toBe("opt_out_unfinished");
+  });
+
+  it("a success that never says done is failed at the opt-out's deadline; a late done is dismissed_late", async () => {
+    const w = new World();
+    await w.open();
+    await w.from(w.cmp, popupFound());
+    await w.wait(1_000);
+    await w.from(w.cmp, optOutResult(true, true));
+    // The deadline is the one set at popupFound: a result that isn't the end doesn't extend it.
+    await w.wait(AC_OPTOUT_TIMEOUT_MS - 1_000 - 1);
+    expect((await w.entry()).outcome).toBe("working");
+    await w.wait(1);
+    expect(await w.entry()).toMatchObject({ outcome: "failed", reason: "opt_out_timeout" });
+    expect(count(w.cmp, "selfTest")).toBe(0);
+    expect(count(w.cmp, "restoreAcStyles")).toBe(1);
+    await w.from(w.cmp, autoconsentDone());
+    expect((await w.entry()).outcome).toBe("dismissed_late");
+    expect(count(w.cmp, "selfTest")).toBe(0);
   });
 });
 
@@ -554,6 +625,7 @@ describe("a restarted service worker", () => {
     expect(await w.entry()).toMatchObject({ outcome: "failed", reason: "opt_out_timeout" });
     expect(count(w.cmp, "restoreAcStyles")).toBe(1);
     await w.from(w.cmp, optOutResult(true));
+    await w.from(w.cmp, autoconsentDone());
     expect((await w.entry()).outcome).toBe("dismissed_late");
   });
 
@@ -565,6 +637,7 @@ describe("a restarted service worker", () => {
     await w.restart(AC_OPTOUT_TIMEOUT_MS + 1);
     expect((await w.entry()).outcome).toBe("working");
     await w.from(w.cmp, optOutResult(true));
+    await w.from(w.cmp, autoconsentDone());
     // The deadline had passed before the result came: failed first, then late.
     expect((await w.entry()).outcome).toBe("dismissed_late");
     expect(w.top.inbox).toContainEqual({ type: "acOutcome", outcome: "failed" });
@@ -680,6 +753,7 @@ describe("sends bound to a document", () => {
     await w.from(w.top, cmpDetected());
     await w.from(w.cmp, popupFound());
     await w.from(w.cmp, optOutResult(true, true));
+    await w.from(w.cmp, autoconsentDone());
     await w.from(w.cmp, selfTestResult(true));
     expect(w.sends()).toEqual([
       ["initResp", 0, "top-1"],
