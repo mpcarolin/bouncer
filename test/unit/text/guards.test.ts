@@ -9,26 +9,8 @@ import {
   isVetoed,
   textSources,
 } from "../../../src/core/text/guards.ts";
+import { ACCEPT_ALL } from "../../helpers/text-cases.ts";
 
-// §0 test cases, verbatim, plus the backlog's round-10 cases (the last five of NOT_ACCEPT_ALL).
-const ACCEPT_ALL = [
-  "Accept all and save",
-  "Save & accept all",
-  "Accept cookies and continue to site",
-  "Accept and continue browsing",
-  "Accept all now",
-  "Confirm all",
-  "Select all and save",
-  "Alle auswählen und speichern",
-  "Apply all",
-  "Tillad alle",
-  "Accepter alle",
-  "Godkänn alla",
-  "Hyväksy kaikki",
-  "Acceptă toate",
-  "Sounds good",
-  "Yes, I'm happy",
-];
 const VETOED = [
   "Customise and accept all",
   "Allow all cookies and customise",
@@ -51,6 +33,7 @@ const NOT_VETOED = [
   "Accept required cookies",
   "Accept minimal",
 ];
+// §0 test cases, verbatim, plus the backlog's round-10 cases (the last five).
 const NOT_ACCEPT_ALL = [
   "Reject all",
   "Allow selection",

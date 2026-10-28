@@ -20,15 +20,20 @@ import type { Control, Label, Labelled, SerialisedBanner } from "./types.ts";
 const words = (ts: Term[]) => ts.flatMap((t) => ("word" in t ? [t.word] : []));
 const stems = (ts: Term[]) => ts.flatMap((t) => ("stem" in t ? [t.stem] : []));
 
+/** Group 1's "only" words, and "just": with a necessary term, they make a button necessary-only. */
+const ONLY_WORDS = [
+  ...["only", "just", "nur", "uniquement", "seulement", "solo", "solamente", "soltanto"],
+  ...["apenas", "somente", "doar", "alleen", "endast", "bara", "kun", "vain", "tylko", "только"],
+];
+
 /**
  * Group 1 also holds "only", "selection" and "functional" wording, which marks a button as
  * necessary-*only* but says nothing about a toggle ("Functional" is optional). Toggles take just
  * the terms that mean "necessary".
  */
 const NOT_NECESSITY = new Set([
-  ...["only", "selection", "selected", "minimum", "nur", "uniquement", "seulement", "solo"],
-  ...["solamente", "soltanto", "apenas", "somente", "doar", "alleen", "endast", "bara", "kun"],
-  ...["vain", "tylko", "только", "minimal", "functional", "funktional", "funktionell"],
+  ...ONLY_WORDS,
+  ...["selection", "selected", "minimum", "minimal", "functional", "funktional", "funktionell"],
   ...["functione", "fonctionn", "funzional", "funcional"],
 ]);
 const termText = (t: Term) => ("word" in t ? t.word : t.stem);
@@ -43,6 +48,7 @@ const NECESSARY_TERMS: Term[] = [
 ];
 const necessaryWord = wordRe(words(NECESSARY_TERMS));
 const necessaryStem = stemRe(stems(NECESSARY_TERMS));
+const onlyWord = wordRe(ONLY_WORDS);
 /** "non-essential", "nicht notwendig": a negation before a necessary term means optional. */
 const negatedNecessary = new RegExp(
   `(?<![\\p{L}\\p{N}])(?:${NEGATING_PREFIXES.map((p) => fold(normalise(p))).join("|")})[-\\s]+(?=${necessaryWord.source}|${necessaryStem.source})\\p{L}+`,
@@ -74,6 +80,20 @@ function regexClass(c: Control): ButtonRegexClassification {
 }
 
 const isClose = (c: Control) => textSources(c).some((s) => CLOSE_RE.test(folded(s)));
+
+/**
+ * "Proceed with necessary cookies only", "Nur notwendige Cookies": a necessary term (not negated,
+ * as in "non-essential") with an only word, where autoconsent's regex sees nothing. Never when any
+ * of the control's texts names everything or is accept-all.
+ */
+function isNecessaryOnly(c: Control): boolean {
+  const sources = textSources(c);
+  if (sources.some(hasEverythingWord) || isAcceptAll(sources, "other")) return false;
+  return sources.some((s) => {
+    const t = folded(s).replace(negatedNecessary, "optional");
+    return (necessaryWord.test(t) || necessaryStem.test(t)) && onlyWord.test(t);
+  });
+}
 const isSaveCandidate = (c: Control) =>
   textSources(c).some((s) => saveWord.test(folded(s)) || saveStem.test(folded(s)));
 
@@ -115,7 +135,8 @@ export function labelDeterministic(b: SerialisedBanner): Map<number, Labelled | 
       out.set(c.id, withBlocks(c, "save", "rule"));
     } else {
       const cls = regexClass(c);
-      out.set(c.id, cls === "other" ? null : withBlocks(c, cls, "regex"));
+      if (cls !== "other") out.set(c.id, withBlocks(c, cls, "regex"));
+      else out.set(c.id, isNecessaryOnly(c) ? withBlocks(c, "reject", "regex") : null);
     }
   }
   return out;

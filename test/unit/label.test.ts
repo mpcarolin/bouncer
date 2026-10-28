@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { idsLeftToAi, labelDeterministic, mergeAiLabels } from "../../src/core/label.ts";
 import { loadFixtures } from "../fixtures/load.ts";
 import { b, btn, lab, lnk, tog } from "../helpers/banner.ts";
+import { ACCEPT_ALL } from "../helpers/text-cases.ts";
 
 describe("fixtures", () => {
   test.each(loadFixtures().filter((f) => f.kind === "positive"))(
@@ -132,6 +133,35 @@ test("hide wording is close, in the same anchored form as close and dismiss", ()
   }
   for (const t of ["Hide details", "Hide purposes", "Hide greeting"]) {
     expect(lab([btn(t)])[0]?.label, t).not.toBe("close");
+  }
+});
+
+test("necessary-only wording is a deterministic reject, button or link", () => {
+  for (const t of [
+    "Proceed with necessary cookies only",
+    "Necessary cookies only",
+    "Only essential",
+    "Use essential cookies only",
+    "Required only",
+    "Nur notwendige Cookies",
+    "Uniquement les cookies nécessaires",
+    "Accept only necessary cookies",
+  ]) {
+    expect(lab([btn(t)])[0], t).toEqual({ label: "reject", source: "regex" });
+    expect(lab([lnk(t)])[0], t).toEqual({ label: "reject", source: "regex" });
+  }
+});
+
+test("necessary wording without an only, with an everything word or negated, or accept-all, isn't reject", () => {
+  for (const t of [
+    "Necessary cookies",
+    "Accept all cookies",
+    "Accept non-essential cookies",
+    "Allow all, not just necessary",
+    "Only accept all",
+    ...ACCEPT_ALL,
+  ]) {
+    expect(lab([btn(t)])[0]?.label, t).not.toBe("reject");
   }
 });
 

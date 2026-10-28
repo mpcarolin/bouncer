@@ -17,6 +17,17 @@ describe("fastPathTarget", () => {
     expect(target(banner(COOKIE_TEXT, [btn("Accept all"), btn("Reject all")]))).toBe(1);
   });
 
+  test("a Bank of England-shaped banner: its necessary-only button is the target, with no model", () => {
+    const text =
+      "Cookies on the Bank of England website. We use necessary cookies to make our site work. We'd also like to set optional analytics cookies.";
+    const b = banner(text, [
+      btn("Accept recommended cookies"),
+      btn("Proceed with necessary cookies only"),
+      lnk("Change cookie settings"),
+    ]);
+    expect(target(b)).toBe(1);
+  });
+
   test('"Doorgaan met aanvaarden" (regex reject, accept-verb veto) → null', () => {
     expect(target(banner(COOKIE_TEXT, [btn("Doorgaan met aanvaarden")]))).toBeNull();
   });
