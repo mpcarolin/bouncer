@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { MockProvider } from "../../src/ai/mock/provider.ts";
 import type { AiProvider, AiResult } from "../../src/core/ai.ts";
 import type { ContentPlatform } from "../../src/core/platform.ts";
+import type { Clock } from "../../src/core/types.ts";
 import type { FakeBackground } from "../helpers/fake-platform.ts";
 import { mount, mountPage, unmountAll } from "../helpers/mount.ts";
 import {
@@ -9,7 +10,9 @@ import {
   byId,
   Counting,
   cleanup,
+  fastClock,
   HIDDEN,
+  noClaimCap,
   prehide,
   prehideAtClaimWait,
   setAsideAt,
@@ -646,5 +649,86 @@ describe("OwnPath: a banner that confirms the refusal (§2g)", () => {
     });
     expect(e.notes.some((n) => n.startsWith("confirmation:"))).toBe(false);
     expect(window.__clicked).toBe("save");
+  });
+});
+
+describe("OwnPath: the claim wait ends at autoconsent's look (§2b)", () => {
+  const looked = (startedAt: number) => ({ type: "acLooked" as const, startedAt });
+
+  /** Starts on custom-reject; `onGate` runs as the gate is asked, after the candidate was found. */
+  async function startWith(onGate: (bg: FakeBackground) => void, clock = noClaimCap) {
+    mountPage("custom-reject");
+    const provider = new Counting();
+    let bg: FakeBackground | undefined;
+    provider.onCall = (op) => {
+      if (op === "isConsentDialog" && bg) onGate(bg);
+    };
+    const h = await start({ provider, clock, before: (x) => void (bg = x.bg) });
+    return { h, bg: bg as FakeBackground };
+  }
+
+  test("a look that began after the candidate was found, recognising nothing, ends it: Bouncer acts without the safety net", async () => {
+    const { h } = await startWith((bg) => void bg.sendToFrame(1, 0, looked(Date.now())));
+
+    const e = await h.path.done;
+    expect(e).toMatchObject({ outcome: "dismissed", path: "ai" });
+    expect(e.notes).toContainEqual(expect.stringMatching(/^claim_wait:autoconsent_looked:\d+$/));
+    expect(window.__clicked).toBe("reject");
+  });
+
+  test("a look that began after the page last changed ends it, though it began before the candidate was found", async () => {
+    // Nothing on the page changes once Bouncer starts watching; its first pass is held back 200 ms.
+    const held: Clock = {
+      ...noClaimCap,
+      setTimeout: (fn, ms) => noClaimCap.setTimeout(fn, ms === 0 ? 2000 : ms),
+    };
+    let watching = 0;
+    const { h } = await startWith((bg) => void bg.sendToFrame(1, 0, looked(watching)), held);
+    watching = Date.now();
+
+    const e = await h.path.done;
+    expect(e.outcome).toBe("dismissed");
+    expect(e.notes).toContainEqual(expect.stringMatching(/^claim_wait:autoconsent_looked:\d+$/));
+  });
+
+  test("a look that began before the page last changed doesn't end it", async () => {
+    const { h, bg } = await startWith(
+      (bg) => void bg.sendToFrame(1, 0, looked(Date.now() - 60_000)),
+    );
+    await until(() => h.provider.calls.includes("isConsentDialog"));
+    await sleep(300);
+    expect(h.clicks).toEqual([]);
+    expect(await h.app.arbiter.owner(1)).toBe("none");
+
+    void bg.sendToFrame(1, 0, looked(Date.now()));
+    const e = await h.path.done;
+    expect(e.outcome).toBe("dismissed");
+  });
+
+  test("autoconsent's detection ending ends it, and the entry says so", async () => {
+    const { h } = await startWith((bg) => void bg.sendToFrame(1, 0, { type: "acDetectionEnded" }));
+
+    const e = await h.path.done;
+    expect(e.outcome).toBe("dismissed");
+    expect(e.notes).toContainEqual(expect.stringMatching(/^claim_wait:autoconsent_ended:\d+$/));
+  });
+
+  test("with no look, the safety net ends it, and the entry says so", async () => {
+    const { h } = await startWith(() => {}, fastClock);
+
+    const e = await h.path.done;
+    expect(e.outcome).toBe("dismissed");
+    expect(e.notes).toContainEqual(expect.stringMatching(/^claim_wait:timed_out:\d+$/));
+  });
+
+  test("autoconsent recognising the banner after its look still stands Bouncer down", async () => {
+    const { h } = await startWith((bg) => {
+      void bg.sendToFrame(1, 0, looked(Date.now()));
+      void bg.sendToFrame(1, 0, { type: "acDetected" });
+    });
+
+    const e = await h.path.done;
+    expect(e).toMatchObject({ outcome: "deferred", reason: "autoconsent_detected" });
+    expect(h.clicks).toEqual([]);
   });
 });

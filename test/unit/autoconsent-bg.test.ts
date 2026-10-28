@@ -99,13 +99,20 @@ function workerClock() {
   return { clock, stop };
 }
 
-const report = (lifecycle: AcLifecycle, detectedCmps: string[] = []): AcMessage => ({
+const report = (
+  lifecycle: AcLifecycle,
+  detectedCmps: string[] = [],
+  findCmpAttempts = 0,
+): AcMessage => ({
   type: "report",
   instanceId: "instance",
   url: PAGE,
   mainFrame: true,
-  state: { lifecycle, detectedCmps },
+  state: { lifecycle, detectedCmps, findCmpAttempts },
 });
+/** autoconsent's `report` as its `attempt`th look (detection pass) begins, or as it answers a ping. */
+const look = (attempt: number): AcMessage => report("started", [], attempt);
+const PING = { type: "measurePerformance" };
 
 /**
  * One tab on PAGE: its top frame and a CMP's iframe (frame 2), each with autoconsent's and
@@ -767,6 +774,90 @@ describe("detection ended", () => {
     expect(w.top.inbox).toEqual([]);
     await w.from(w.top, report("done"));
     expect(w.top.inbox).toEqual([{ type: "acDetectionEnded" }]);
+  });
+});
+
+describe("autoconsent's looks at the top frame (§2b)", () => {
+  it("a look's start is answered with a ping; the ping's answer, with nothing recognised, tells Bouncer when the look began", async () => {
+    const w = new World();
+    await w.open();
+    const began = Date.now();
+    await w.from(w.top, look(1));
+    expect(w.top.inbox).toEqual([PING]);
+    expect(w.sends("initResp")).toEqual([["measurePerformance", 0, "top-1"]]);
+    await w.wait(30);
+    await w.from(w.top, look(1)); // the answer: the same look, which has ended
+    expect(w.top.inbox).toEqual([PING, { type: "acLooked", startedAt: began }]);
+
+    // The next look is followed in the same way, once.
+    await w.wait(500);
+    await w.from(w.top, look(2));
+    await w.from(w.top, look(2));
+    await w.from(w.top, look(2)); // not a ping's answer: nothing is waiting for one
+    expect(w.top.inbox.slice(2)).toEqual([PING, { type: "acLooked", startedAt: began + 530 }]);
+  });
+
+  it("a look that recognises a CMP never says it ended", async () => {
+    const w = new World();
+    await w.open();
+    await w.from(w.top, look(1));
+    await w.from(w.top, cmpDetected());
+    await w.from(w.top, look(1));
+    expect(types(w.top)).toEqual(["measurePerformance", "acDetected"]);
+  });
+
+  it("an eval keeps the look open until it is answered, and the answer is followed by a ping", async () => {
+    const w = new World();
+    await w.open();
+    const began = Date.now();
+    let answer: (v: unknown) => void = () => {};
+    w.bg.runInMainWorld = () => new Promise((r) => (answer = r));
+    await w.from(w.top, look(1));
+    const evaluating = w.host.handle(
+      { type: "eval", id: "e1", code: "…", snippetId: "EVAL_0" },
+      { ...w.top.sender },
+    );
+    await w.from(w.top, look(1)); // the first ping's answer, while the eval is out
+    expect(types(w.top)).toEqual(["measurePerformance"]);
+
+    answer(true);
+    await evaluating;
+    expect(w.top.inbox).toEqual([PING, { type: "evalResp", id: "e1", result: true }, PING]);
+    await w.from(w.top, look(1));
+    expect(w.top.inbox.at(-1)).toEqual({ type: "acLooked", startedAt: began });
+  });
+
+  it("waits for the answer to every ping out", async () => {
+    const w = new World();
+    await w.open();
+    await w.from(w.top, look(1));
+    await w.from(w.top, { type: "eval", id: "e1", code: "…", snippetId: "EVAL_0" });
+    expect(types(w.top)).toEqual(["measurePerformance", "evalResp", "measurePerformance"]);
+    await w.from(w.top, look(1));
+    expect(count(w.top, "acLooked")).toBe(0); // one ping is still out
+    await w.from(w.top, look(1));
+    expect(count(w.top, "acLooked")).toBe(1);
+  });
+
+  it("follows only the top frame's current document", async () => {
+    const w = new World();
+    await w.open();
+    await w.from(w.cmp, look(1));
+    await w.from(w.cmp, look(1));
+    await w.from(w.top, look(1), { documentId: "top-0" }); // the previous page's
+    await w.from(w.top, look(1), { documentId: "top-0" });
+    expect([...w.top.inbox, ...w.cmp.inbox]).toEqual([]);
+  });
+
+  it("a ping still out when the tab closes is forgotten with it", async () => {
+    const w = new World();
+    await w.open();
+    await w.from(w.top, look(1));
+    await w.host.forget(TAB);
+    await w.from(w.top, init(PAGE));
+    w.clearInboxes();
+    await w.from(w.top, look(1)); // a new page's first look, not the old ping's answer
+    expect(w.top.inbox).toEqual([PING]);
   });
 });
 

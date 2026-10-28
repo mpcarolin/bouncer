@@ -58,7 +58,7 @@ test("a Cookiebot-shaped CMP is refused by autoconsent, and Bouncer's own path c
   await ownPathDeferred(readLog, site);
 });
 
-test("a CMP detected after Bouncer has its dialog in hand: Bouncer stands down in its claim wait", async ({
+test("a CMP detected after Bouncer has its dialog in hand, while its model answers: Bouncer stands down in its claim wait", async ({
   page,
   pageUrl,
   readLog,
@@ -80,7 +80,8 @@ test("a CMP detected after Bouncer has its dialog in hand: Bouncer stands down i
       intervals: [50],
     })
     .toBeGreaterThan(0);
-  // Only now does the CMP's script run, so autoconsent detects it during Bouncer's claim wait.
+  // Only now does the CMP's script run, so autoconsent's next look detects it while Bouncer's
+  // model (slow on this page) is still answering.
   await page.evaluate(() => (window as unknown as { initCmp(): void }).initCmp());
 
   const entry = await acOutcome(readLog, site);

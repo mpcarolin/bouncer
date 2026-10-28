@@ -8,8 +8,9 @@ import { expect, expectShown, siteOf, test } from "./fixtures.ts";
 const texts = (clicked: { text: string }[]) => clicked.map((c) => c.text);
 
 /**
- * An absence can't be polled for. With Bouncer on, a banner's claim is logged CLAIM_WAIT_MS after
- * the banner is found; waiting this long past the page load leaves room for that and then some.
+ * An absence can't be polled for. With Bouncer on, a banner's claim is logged at most
+ * CLAIM_WAIT_MS after the banner is found; waiting this long past the page load leaves room for
+ * that and then some.
  */
 const ABSENCE_WAIT_MS = CLAIM_WAIT_MS + 1500;
 
@@ -27,6 +28,8 @@ test("custom-reject: the reject button is clicked and the banner is dismissed", 
     verification: "verified",
   });
   expect(texts(entry.clicked)).toEqual(["Reject all"]);
+  // autoconsent, unmodified, looked at the page and recognised nothing: that ended the claim wait.
+  expect(entry.notes).toContainEqual(expect.stringMatching(/^claim_wait:autoconsent_looked:\d+$/));
   await expect(page.locator("#status")).toHaveText("consent: rejected");
   await expect(page.locator("#my-cookie-notice")).toHaveCount(0);
   await expect(page.locator("[data-bouncer-hidden], style[data-bouncer]")).toHaveCount(0);

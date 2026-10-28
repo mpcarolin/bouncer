@@ -29,6 +29,8 @@ export type ToContent =
   | { type: "acDetected" } // top-frame cmpDetected: freeze the scroll snapshot
   | { type: "acPopupFound" } // record the inline values for unlocking
   | { type: "acDetectionEnded" }
+  /** A top-frame look of autoconsent's ended recognising nothing; `startedAt` is when it began. */
+  | { type: "acLooked"; startedAt: number }
   | { type: "acOutcome"; outcome: Outcome }
   | { type: "restoreAcStyles" };
 
@@ -106,7 +108,7 @@ export type AcMessage =
       url: string;
       mainFrame: boolean;
       /** autoconsent's `ConsentState`; Bouncer reads only these fields. */
-      state: { lifecycle: AcLifecycle; detectedCmps: string[] };
+      state: { lifecycle: AcLifecycle; detectedCmps: string[]; findCmpAttempts: number };
     };
 
 /**
@@ -122,7 +124,9 @@ export type ToAutoconsent =
     }
   | { type: "evalResp"; id: string; result: unknown }
   | { type: "optOut" }
-  | { type: "selfTest" };
+  | { type: "selfTest" }
+  /** Answered with a `report`: the background's ping, to learn when a look has ended. */
+  | { type: "measurePerformance" };
 
 /** Anything the background sends one frame: Bouncer's content script and autoconsent's share it. */
 export type FrameMessage = ToContent | ToAutoconsent;
@@ -141,6 +145,7 @@ const TO_CONTENT_TYPES: Record<ToContent["type"], true> = {
   acDetected: true,
   acPopupFound: true,
   acDetectionEnded: true,
+  acLooked: true,
   acOutcome: true,
   restoreAcStyles: true,
 };

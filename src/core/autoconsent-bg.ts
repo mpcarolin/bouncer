@@ -87,6 +87,30 @@ interface TabState {
   frames: Record<number, FrameState>;
 }
 
+/**
+ * autoconsent's current look at a tab's top frame: one detection pass (`findCmp`), begun by the
+ * `report` that counts it in `findCmpAttempts`. autoconsent says when a look recognises a CMP
+ * (`cmpDetected`), never that one found nothing, so the host asks: `measurePerformance` is
+ * answered with a `report`. The page runs one task at a time, and a look's rules run without a
+ * break but for their `eval`s, which the host answers itself, so the answer to a ping comes only
+ * once the look has ended or is waiting on one. A look's `cmpDetected`s are sent before it. With
+ * every ping and every eval answered and no `cmpDetected`, the look ended recognising nothing
+ * (§2b). autoconsent's heuristic rule, the one rule that waits a timer while detecting, is off.
+ */
+interface Look {
+  documentId: string;
+  /** Its `findCmpAttempts`. */
+  attempt: number;
+  /** When the report that began it arrived. */
+  startedAt: number;
+  /** Pings not yet answered. */
+  pings: number;
+  /** The document's evals not yet answered. */
+  evals: number;
+  /** It recognised a CMP, or its end was sent: nothing more is sent for it. */
+  over: boolean;
+}
+
 /** A prerendered document's `init`, not yet answered: `url` is the one autoconsent sent. */
 interface Held {
   from: Sender;
@@ -109,7 +133,8 @@ const PENDING = "ac:pending";
 
 /**
  * The `report` lifecycles that matter here: the end of detection (§2b) and the end of an opt-out
- * (the re-hide watch). The rest are progress, dropped before they cost a storage read.
+ * (the re-hide watch). The rest are progress, dropped before they cost a storage read (once the
+ * top frame's looks have been followed from them, in memory).
  */
 const NOTABLE_REPORTS = new Set<string>([
   "nothingDetected",
@@ -167,6 +192,11 @@ export class AutoconsentHost {
    * page. That is safe, and Bouncer's own path, which waits for the page to be shown, still runs.
    */
   private readonly held = new Map<number, Held[]>();
+  /**
+   * Each tab's top-frame `Look`. In memory, unlike the rest: a look lasts milliseconds, and one a
+   * stopped worker forgets only leaves Bouncer's own path to wait out its safety net.
+   */
+  private readonly looks = new Map<number, Look>();
   /** Settles once the deadlines stored by an earlier worker are re-armed or ended. */
   readonly ready: Promise<void>;
 
@@ -189,6 +219,8 @@ export class AutoconsentHost {
       if (msg.type === "init") this.hold(msg.url, from);
       return;
     }
+    // Synchronously, so in the order autoconsent sent them.
+    if (from.frameId === 0) this.follow(msg, from);
     if (msg.type === "eval") {
       // Not queued behind the tab's other steps: autoconsent waits only a second for it.
       return this.evaluate(msg.id, msg.snippetId, from);
@@ -234,6 +266,7 @@ export class AutoconsentHost {
   /** The tab closed: its pending opt-outs end, and its state goes. */
   forget(tabId: number): Promise<void> {
     this.held.delete(tabId);
+    this.looks.delete(tabId);
     return this.serial(tabId, async () => {
       const tab = await this.load(tabId);
       await this.endFrames(tabId, tab, "tab_closed");
@@ -285,6 +318,58 @@ export class AutoconsentHost {
       }
     }
     this.send(from.tabId, from.frameId, from.documentId, { type: "evalResp", id, result });
+    if (from.frameId === 0) this.evalAnswered(from);
+  }
+
+  // --- the top frame's looks ---
+
+  /** Follows autoconsent's looks at the top frame (`Look`). */
+  private follow(msg: AcMessage, from: Sender): void {
+    const prev = this.looks.get(from.tabId);
+    const look = prev?.documentId === from.documentId ? prev : undefined;
+    if (msg.type === "cmpDetected") {
+      if (look) look.over = true;
+    } else if (msg.type === "eval") {
+      if (look) look.evals++;
+    } else if (msg.type === "report" && msg.state?.lifecycle === "started") {
+      const attempt = msg.state.findCmpAttempts;
+      if (typeof attempt !== "number" || attempt < 1) return;
+      if (!look || attempt > look.attempt) {
+        const next: Look = {
+          documentId: from.documentId,
+          attempt,
+          startedAt: this.clock.now(),
+          pings: 0,
+          evals: look?.evals ?? 0,
+          over: false,
+        };
+        this.looks.set(from.tabId, next);
+        this.ping(from.tabId, next);
+      } else if (attempt === look.attempt && look.pings > 0) {
+        look.pings--;
+        this.settle(from.tabId, look);
+      }
+    }
+  }
+
+  private ping(tabId: number, look: Look): void {
+    look.pings++;
+    this.send(tabId, 0, look.documentId, { type: "measurePerformance" });
+  }
+
+  /** What an eval's answer sets off in the look runs before autoconsent reads the next message. */
+  private evalAnswered(from: Sender): void {
+    const look = this.looks.get(from.tabId);
+    if (look?.documentId !== from.documentId || look.evals === 0) return;
+    look.evals--;
+    if (!look.over) this.ping(from.tabId, look);
+  }
+
+  /** With nothing outstanding, the look ended recognising nothing: Bouncer's own path is told. */
+  private settle(tabId: number, look: Look): void {
+    if (look.over || look.pings > 0 || look.evals > 0) return;
+    look.over = true;
+    this.send(tabId, 0, look.documentId, { type: "acLooked", startedAt: look.startedAt });
   }
 
   private async answerInit(url: string, from: Sender): Promise<void> {

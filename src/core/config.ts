@@ -1,3 +1,7 @@
+/**
+ * The claim wait's safety net (§2b). The wait ends at autoconsent's look at the page; this, from
+ * the start of the candidate's run, ends it only if autoconsent never looks.
+ */
 export const CLAIM_WAIT_MS = 1500;
 export const PANEL_WAIT_MS = 3000;
 export const VERIFY_GONE_MS = 3000;

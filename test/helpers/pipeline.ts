@@ -26,11 +26,16 @@ declare global {
   }
 }
 
-/** Real timers, ten times faster: the claim wait is 150 ms and detection watches for 2 s. */
+/** Real timers, ten times faster: the claim wait's safety net is 150 ms, detection's watch 2 s. */
 export const fastClock: Clock = {
   now: () => Date.now(),
   setTimeout: (fn, ms) => window.setTimeout(fn, ms / 10),
   clearTimeout: (id) => window.clearTimeout(id),
+};
+/** `fastClock`, except that the claim wait's safety net never fires: only autoconsent ends it. */
+export const noClaimCap: Clock = {
+  ...fastClock,
+  setTimeout: (fn, ms) => (ms === CLAIM_WAIT_MS ? 0 : fastClock.setTimeout(fn, ms)),
 };
 export const VERIFY = { goneMs: 500, stayMs: 200 };
 export const PANEL = { waitMs: 500, pollMs: 20 };

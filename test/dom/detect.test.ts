@@ -242,6 +242,45 @@ describe("CandidateWatcher", () => {
     expect(seen).toEqual(["bar", "two"]);
   });
 
+  it("gives each candidate the time the page last changed before the pass that found it, or watching began", async () => {
+    const { clock, advance } = fakeClock();
+    mount(cookieBar());
+    advance(100);
+    const seen: [string, number][] = [];
+    const w = new CandidateWatcher(document, (c, since) => seen.push([c.el.id, since]), clock);
+    advance(400); // the first pass, at 100: nothing has changed since watching began
+    expect(seen).toEqual([["bar", 100]]);
+
+    advance(1000);
+    mount(`<div id="two" style="${BAR}bottom:80px">Consent needed <button>OK</button></div>`);
+    await Promise.resolve(); // let the MutationObserver callback run, at 1500
+    advance(DETECT_THROTTLE_MS);
+    w.stop();
+    expect(seen).toEqual([
+      ["bar", 100],
+      ["two", 1500],
+    ]);
+  });
+
+  it("a candidate in a shadow root the pass is first to see gets the pass's own time", async () => {
+    const { clock, advance } = fakeClock();
+    const host = mount(`<div id="host"></div>`).querySelector("#host") as HTMLElement;
+    advance(100);
+    const seen = new Map<string, number>();
+    const w = new CandidateWatcher(document, (c, since) => seen.set(c.el.id, since), clock);
+    advance(10); // the first pass, at 100: nothing yet
+    advance(40);
+    mount(cookieBar());
+    await Promise.resolve(); // the change, at 150; the next pass is throttled to 350
+    advance(150);
+    // At 300, inside a shadow root no observer sees yet.
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML = `<div id="shadowed" style="${BAR}bottom:80px">We use cookies <button>OK</button></div>`;
+    advance(100);
+    w.stop();
+    expect(Object.fromEntries(seen)).toEqual({ bar: 150, shadowed: 350 });
+  });
+
   it("caps detection passes during a mutation storm", async () => {
     const { clock, advance } = fakeClock();
     let passes = 0;

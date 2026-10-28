@@ -178,6 +178,18 @@ const realClock: Clock = {
   clearTimeout: (id) => clearTimeout(id),
 };
 
+/**
+ * Whether `el` is in a shadow root first observed by this pass, directly or through its host: what
+ * changed there before is unknown, so it may have changed just now.
+ */
+function inFresh(el: Element, fresh: Set<Node>): boolean {
+  if (fresh.size === 0) return false;
+  for (let root = el.getRootNode(); root instanceof ShadowRoot; root = root.host.getRootNode()) {
+    if (fresh.has(root)) return true;
+  }
+  return false;
+}
+
 export interface WatcherOptions {
   /** Called at the start of every detection pass. For tests that count passes. */
   onPass?: () => void;
@@ -187,6 +199,10 @@ export interface WatcherOptions {
  * Watches the live DOM and reports each new candidate once. Passes run at most once per
  * DETECT_THROTTLE_MS however many mutations arrive; watching ends after DETECT_WATCH_MS.
  * A candidate is identified by element plus text hash, so changed text is reported again.
+ *
+ * Each comes with `since`: the page was as the pass found it from then on, the time of the last
+ * change the watcher saw before the pass, or when watching began. Anything that looked at the
+ * page from `since` on saw the candidate as it was found (§2b).
  */
 export class CandidateWatcher {
   private readonly observers: MutationObserver[] = [];
@@ -194,16 +210,18 @@ export class CandidateWatcher {
   private readonly seen = new WeakMap<Element, Set<string>>();
   private readonly rejected = new WeakSet<Element>();
   private lastPass = Number.NEGATIVE_INFINITY;
+  private changedAt: number;
   private timer: number | null = null;
   private stopTimer: number | null;
   private stopped = false;
 
   constructor(
     private readonly doc: Document,
-    private readonly onCandidate: (c: Candidate) => void,
+    private readonly onCandidate: (c: Candidate, since: number) => void,
     private readonly clock: Clock = realClock,
     private readonly opts: WatcherOptions = {},
   ) {
+    this.changedAt = clock.now();
     this.observe(doc);
     this.stopTimer = clock.setTimeout(() => this.stop(), DETECT_WATCH_MS);
     // Not synchronous: `onCandidate` may call back into the watcher before the constructor returns.
@@ -231,13 +249,20 @@ export class CandidateWatcher {
     this.timer = this.stopTimer = null;
   }
 
-  /** A document observer does not see inside shadow roots, so each open root gets its own. */
-  private observe(root: Node): void {
-    if (this.observed.has(root)) return;
+  /**
+   * A document observer does not see inside shadow roots, so each open root gets its own. False if
+   * `root` was already observed.
+   */
+  private observe(root: Node): boolean {
+    if (this.observed.has(root)) return false;
     this.observed.add(root);
-    const o = new MutationObserver(() => this.schedule());
+    const o = new MutationObserver(() => {
+      this.changedAt = this.clock.now();
+      this.schedule();
+    });
     o.observe(root, { childList: true, subtree: true, attributes: true, characterData: true });
     this.observers.push(o);
+    return true;
   }
 
   private mark(c: Candidate): boolean {
@@ -260,12 +285,13 @@ export class CandidateWatcher {
   private pass(): void {
     if (this.stopped) return;
     this.opts.onPass?.();
-    for (const root of shadowRootsOf(this.doc)) this.observe(root);
+    const fresh = new Set<Node>();
+    for (const root of shadowRootsOf(this.doc)) if (this.observe(root)) fresh.add(root);
     for (const c of findCandidates(this.doc, (el) => this.rejected.has(el))) {
       if (this.stopped) break;
       if (!this.mark(c)) continue;
       try {
-        this.onCandidate(c);
+        this.onCandidate(c, inFresh(c.el, fresh) ? this.clock.now() : this.changedAt);
       } catch (e) {
         console.error("Bouncer: candidate handler threw", e);
       }

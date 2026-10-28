@@ -26,9 +26,14 @@ function decide(declined) {
   document.getElementById('status').textContent = 'consent: ' + (declined ? 'declined' : 'accepted');
 }
 </script></head>
-<body><main><h1>Cookiebot-shaped mock CMP</h1><p>Expected: autoconsent's Cybotcookiebot rule opts out ("Deny"), its self-test passes: dismissed. Bouncer's own path stands down. With <code>?late</code>, the CMP's script runs when <code>initCmp()</code> is called.</p></main>
+<body><main><h1>Cookiebot-shaped mock CMP</h1><p>Expected: autoconsent's Cybotcookiebot rule opts out ("Deny"), its self-test passes: dismissed. Bouncer's own path stands down. With <code>?late</code>, the CMP's script runs when <code>initCmp()</code> is called, and Bouncer's model answers slowly.</p></main>
 <div id="status">consent: unset</div>
 <div id="site-cmp-dialog" role="dialog" aria-modal="true">This website uses cookies. We use cookies to personalise content and ads, and to analyse our traffic.
   <button id="CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll" onclick="decide(false)">Allow all</button>
   <button id="CybotCookiebotDialogBodyLevelButtonLevelOptinDeclineAll" onclick="decide(true)">Deny</button></div>
+<script>
+// With `?late`, Bouncer's model answers as slowly as a real one can, so autoconsent's next look,
+// after `initCmp()`, comes before Bouncer could claim.
+if (new URLSearchParams(location.search).has('late')) document.getElementById('site-cmp-dialog').prepend('[mock:slow] ');
+</script>
 </body></html>

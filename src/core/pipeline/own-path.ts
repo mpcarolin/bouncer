@@ -98,6 +98,8 @@ type Targeted = Extract<Decision, { target: number }>;
 interface Run {
   c: Candidate;
   entry: Draft;
+  /** The page was as found from then on (the watcher's `since`): a look from then on saw it. */
+  since: number;
   /** Something was hidden or clicked: any ending but a dismissal is now `failed`. */
   acted: boolean;
   /** The settings panel the hop found, once it has (§2f.3). */
@@ -188,7 +190,7 @@ export class OwnPath {
   private readonly hider = new Hider();
   private watcher: CandidateWatcher | null = null;
   /** Waiting candidates, by element: a later report of the same element replaces the earlier. */
-  private readonly queue = new Map<Element, { c: Candidate; found: number }>();
+  private readonly queue = new Map<Element, { c: Candidate; found: number; since: number }>();
   private readonly notConsent: Candidate[] = [];
   /** When each candidate set aside for autoconsent's prehide was first found (`setAside`). */
   private readonly asideSince = new WeakMap<Element, number>();
@@ -203,6 +205,8 @@ export class OwnPath {
   private acDetected = false;
   /** autoconsent's detection ended with nothing found: the claim wait can end early. */
   private acEnded = false;
+  /** When the latest of autoconsent's top-frame looks that ended recognising nothing began. */
+  private lookedAt = Number.NEGATIVE_INFINITY;
   /** A dismissed `acOutcome` has been through `tryUnlock`: later ones are ignored. */
   private acUnlockTried = false;
   /** The page's one `model_unavailable` entry has been logged. */
@@ -228,9 +232,14 @@ export class OwnPath {
     this.d.platform.onMessage((m) => this.onNotice(m));
     // A notice held back since document_start may already have stood Bouncer down.
     if (this.finished) return;
-    this.watcher = new CandidateWatcher(this.d.doc, (c) => this.enqueue(c), this.clock, {
-      onPass: () => this.refreshScroll(),
-    });
+    this.watcher = new CandidateWatcher(
+      this.d.doc,
+      (c, since) => this.enqueue(c, since),
+      this.clock,
+      {
+        onPass: () => this.refreshScroll(),
+      },
+    );
   }
 
   /** Stops watching and ignores later notices; a run in flight ends before its next action. */
@@ -257,6 +266,10 @@ export class OwnPath {
           return;
         case "acDetectionEnded":
           this.acEnded = true;
+          this.wake();
+          return;
+        case "acLooked":
+          this.lookedAt = Math.max(this.lookedAt, m.startedAt);
           this.wake();
           return;
         case "acPopupFound":
@@ -317,9 +330,9 @@ export class OwnPath {
 
   // --- candidates, one at a time ---
 
-  private enqueue(c: Candidate): void {
+  private enqueue(c: Candidate, since: number): void {
     if (this.finished || this.acDetected) return;
-    this.queue.set(c.el, { c, found: this.clock.now() });
+    this.queue.set(c.el, { c, found: this.clock.now(), since });
     void this.drain();
   }
 
@@ -332,7 +345,7 @@ export class OwnPath {
         if (next.done) break;
         this.queue.delete(next.value.c.el);
         try {
-          await this.handle(next.value.c, next.value.found);
+          await this.handle(next.value.c, next.value.found, next.value.since);
         } catch (e) {
           // `handle` ends every run itself; this only keeps a bug from reaching the page.
           console.error("Bouncer: candidate run failed", e);
@@ -343,7 +356,7 @@ export class OwnPath {
     }
   }
 
-  private async handle(c: Candidate, found: number): Promise<void> {
+  private async handle(c: Candidate, found: number, since: number): Promise<void> {
     // Gone before its turn: nothing to decide. Hidden by autoconsent's prehide, it is set aside.
     if (!c.el.isConnected || !isVisible(c.el)) {
       if (c.el.isConnected && autoconsentHides(c.el)) this.setAside(c, found);
@@ -352,6 +365,7 @@ export class OwnPath {
     const url = this.d.win.location.href;
     const r: Run = {
       c,
+      since,
       acted: false,
       entry: {
         at: found,
@@ -388,9 +402,9 @@ export class OwnPath {
     // The gate, the labeller and the chooser see only what is shown; a save covers the rest.
     let full = serialise(r.c, clickability, { hiddenToggles: true });
     let ser = shownOnly(full);
-    // §2b: wait up to CLAIM_WAIT_MS from finding the candidate, unless autoconsent's detection
-    // ends first. The model calls run during the wait; a replay makes none, but waits all the same.
-    const waited = this.claimWait();
+    // §2b: wait until autoconsent has looked at the page as found and recognised nothing. The
+    // model calls run during the wait; a replay makes none, but waits all the same.
+    const waited = this.claimWait(r);
     const settled = async (): Promise<Ending | undefined> => {
       await waited;
       if (this.stopped) return { outcome: "deferred", reason: "stopped" };
@@ -801,20 +815,34 @@ export class OwnPath {
     return (await this.send({ type: "log", entry }))?.id;
   }
 
-  private claimWait(): Promise<void> {
+  /**
+   * §2b: settles once autoconsent has had its look at the page as the candidate was found: a
+   * top-frame look that began at `since` or later ended recognising nothing, or its detection
+   * ended. autoconsent recognising a CMP, or Bouncer standing down, settles it too, and the caller
+   * tells those apart. CLAIM_WAIT_MS is a safety net, for an autoconsent that never looks. How
+   * the wait ended, and when after the candidate was found, is noted in the entry.
+   */
+  private claimWait(r: Run): Promise<void> {
     return new Promise((resolve) => {
-      if (this.acEnded || this.acDetected || this.finished) {
-        resolve();
-        return;
-      }
-      let timer = 0;
-      const done = () => {
-        this.clock.clearTimeout(timer);
-        this.waiters.delete(done);
+      let timer: number | undefined;
+      let ended = false;
+      const end = (how?: string) => {
+        ended = true;
+        if (timer !== undefined) this.clock.clearTimeout(timer);
+        this.waiters.delete(check);
+        if (how)
+          r.entry.notes.push(`claim_wait:${how}:${this.clock.now() - (r.entry.t.found ?? 0)}`);
         resolve();
       };
-      this.waiters.add(done);
-      timer = this.clock.setTimeout(done, CLAIM_WAIT_MS);
+      const check = () => {
+        if (this.acDetected || this.finished) end();
+        else if (this.acEnded) end("autoconsent_ended");
+        else if (this.lookedAt >= r.since) end("autoconsent_looked");
+      };
+      check();
+      if (ended) return;
+      this.waiters.add(check);
+      timer = this.clock.setTimeout(() => end("timed_out"), CLAIM_WAIT_MS);
     });
   }
 

@@ -1,8 +1,8 @@
 <!doctype html><html><head><meta charset="utf-8"><title>custom banner while typing</title><link rel="stylesheet" href="style.css"></head>
-<body><main><h1>Home-grown banner shown while the user types</h1><p>Expected: "Reject all" is clicked: dismissed, and the search box keeps its focus and its text, and the page its scroll position (Goal 4).</p>
+<body><main><h1>Home-grown banner shown while the user types</h1><p>Expected: "Reject all" is clicked: dismissed, and the search box keeps its focus and its text, and the page its scroll position (Goal 4). Bouncer's model answers slowly, as a real one can, so the banner shows while the user types.</p>
 <p style="margin-top:900px"><label>Search <input id="q" type="search" autocomplete="off"></label></p></main>
 <div id="status">consent: unset</div>
-<div class="banner" id="typing-cookie-notice">We use cookies and similar technologies to analyse traffic and personalise ads. You can accept all or reject optional cookies.
+<div class="banner" id="typing-cookie-notice">[mock:slow] We use cookies and similar technologies to analyse traffic and personalise ads. You can accept all or reject optional cookies.
   <button onclick="decide('accepted')">Accept all</button> <button onclick="decide('rejected')">Reject all</button></div>
 <script>function decide(v){ document.getElementById('status').textContent='consent: '+v; document.getElementById('typing-cookie-notice').remove(); }</script>
 </body></html>

@@ -12,6 +12,12 @@ export async function mockDownload(onProgress: (loaded: number) => void): Promis
 
 const META: AiMeta = { ms: 0, cold: false, onDevice: true };
 
+/**
+ * How long `[mock:slow]` makes every answer take: longer than autoconsent's next look takes to
+ * come, as a real model's answer can (§2b).
+ */
+export const MOCK_SLOW_MS = 1500;
+
 const LABELS: Record<string, Label> = {
   "Continue to site": "reject",
   Proceed: "reject",
@@ -24,6 +30,10 @@ const CORROBORATED = new Set(["Not now", "Leave it"]);
 /** Deterministic provider for tests and the e2e build. */
 export class MockProvider implements AiProvider {
   readonly marker = MOCK_MARKER;
+
+  private async pace(b: SerialisedBanner): Promise<void> {
+    if (b.text.includes("[mock:slow]")) await new Promise((r) => setTimeout(r, MOCK_SLOW_MS));
+  }
 
   private forced(b: SerialisedBanner): AiResult<never> | undefined {
     if (b.text.includes("[mock:timeout]")) return { kind: "timeout", meta: { ...META } };
@@ -38,6 +48,7 @@ export class MockProvider implements AiProvider {
   }
 
   async isConsentDialog(b: SerialisedBanner): Promise<AiResult<boolean>> {
+    await this.pace(b);
     const value =
       /cookie|consent|tracking/i.test(b.text) &&
       !/log in|sign up|newsletter|chat|subscribe/i.test(b.text);
@@ -48,6 +59,7 @@ export class MockProvider implements AiProvider {
     b: SerialisedBanner,
     controlIds: number[],
   ): Promise<AiResult<Record<number, Label>>> {
+    await this.pace(b);
     const value: Record<number, Label> = {};
     for (const id of controlIds) {
       const text = b.controls.find((c) => c.id === id)?.text ?? "";
@@ -61,6 +73,7 @@ export class MockProvider implements AiProvider {
     control: Control,
     _label: "reject" | "save" | "settings",
   ): Promise<AiResult<boolean>> {
+    await this.pace(b);
     return (
       this.forced(b) ?? {
         kind: "answer",

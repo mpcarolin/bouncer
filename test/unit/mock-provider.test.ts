@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { MockProvider } from "../../src/ai/mock/provider.ts";
+import { describe, expect, it, vi } from "vitest";
+import { MOCK_SLOW_MS, MockProvider } from "../../src/ai/mock/provider.ts";
 import type { SerialisedBanner } from "../../src/core/types.ts";
 import { loadFixtures } from "../fixtures/load.ts";
 
@@ -55,6 +55,29 @@ describe("MockProvider", () => {
       await mock.corroborate(b, b.controls[0]!, "reject"),
     ]) {
       expect(r.kind).toBe("timeout");
+    }
+  });
+
+  it("[mock:slow] makes every op answer, as usual, after MOCK_SLOW_MS", async () => {
+    vi.useFakeTimers();
+    try {
+      const b = banner("[mock:slow] We use cookies", ["Not now"]);
+      const answers = [
+        mock.isConsentDialog(b),
+        mock.labelControls(b, [0]),
+        mock.corroborate(b, b.controls[0]!, "reject"),
+      ];
+      let settled = 0;
+      for (const a of answers) void a.then(() => settled++);
+      await vi.advanceTimersByTimeAsync(MOCK_SLOW_MS - 1);
+      expect(settled).toBe(0);
+      await vi.advanceTimersByTimeAsync(1);
+      const [gate, labels, corroborated] = await Promise.all(answers);
+      expect(gate).toMatchObject({ kind: "answer", value: true });
+      expect(labels).toMatchObject({ kind: "answer", value: { 0: "other" } });
+      expect(corroborated).toMatchObject({ kind: "answer", value: true });
+    } finally {
+      vi.useRealTimers();
     }
   });
 
