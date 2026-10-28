@@ -1025,6 +1025,22 @@ describe("prerendered pages", () => {
     expect(w.sends()).toEqual([]);
   });
 
+  it("is dropped when another page loads in the tab and autoconsent's init comes before its hello", async () => {
+    const w = new World();
+    await w.open();
+    const next = prerender(w);
+    await w.from(next.top, init(NEXT));
+    await w.from(next.widget, init(NEXT_WIDGET));
+    // The user went elsewhere, and the new page's autoconsent says init before Bouncer's hello.
+    w.top.sender.documentId = "top-2";
+    await w.from(w.top, init(PAGE));
+    await shown(w, w.top);
+    w.bg.frameSends.length = 0;
+    next.activate();
+    await shown(w, next.top);
+    expect(w.sends()).toEqual([]);
+  });
+
   it("is dropped when the tab closes", async () => {
     const w = new World();
     await w.open();

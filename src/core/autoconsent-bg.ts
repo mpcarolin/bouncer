@@ -193,6 +193,9 @@ export class AutoconsentHost {
       return this.evaluate(msg.id, msg.snippetId, from);
     }
     if (msg.type === "init") {
+      // A new page in the tab that isn't a shown prerender (whose init came while it was one): any
+      // prerenders held were discarded or replaced. Its init may come before Bouncer's hello.
+      if (from.frameId === 0) this.held.delete(from.tabId);
       // The document change comes before any deadline is settled, so an old deadline that has
       // passed ends as `navigation`. The answer, which needs no state, goes out at once.
       await Promise.all([
