@@ -6,6 +6,8 @@ export interface Settings {
   closeAction: "click" | "leave";
   agreeToDismiss: boolean;
   onFailed: "restore" | "keep_hidden";
+  /** Keep the on-device model loaded while the browser runs, so no decision waits on loading it. */
+  keepModelWarm: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -14,9 +16,11 @@ export const DEFAULT_SETTINGS: Settings = {
   closeAction: "click",
   agreeToDismiss: false,
   onFailed: "restore",
+  keepModelWarm: false,
 };
 
-const KEY = "settings";
+/** Where the settings are kept in local storage. */
+export const SETTINGS_KEY = "settings";
 
 /**
  * Stored values are merged over the defaults, so older or partial records stay valid. A stored
@@ -24,7 +28,7 @@ const KEY = "settings";
  * every page's `hello` reads it, so a bad value must never make the read throw.
  */
 export async function loadSettings(kv: KV): Promise<Settings> {
-  const stored = await kv.get<Partial<Settings>>(KEY);
+  const stored = await kv.get<Partial<Settings>>(SETTINGS_KEY);
   const sites: unknown = stored?.disabledSites;
   return {
     ...DEFAULT_SETTINGS,
@@ -36,7 +40,7 @@ export async function loadSettings(kv: KV): Promise<Settings> {
 }
 
 export async function saveSettings(kv: KV, s: Settings): Promise<void> {
-  await kv.set(KEY, s);
+  await kv.set(SETTINGS_KEY, s);
 }
 
 function bareHost(hostname: string): string {

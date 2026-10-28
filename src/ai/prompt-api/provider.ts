@@ -36,6 +36,7 @@ const SYSTEM: Record<Kind, string> = {
   labels: LABELS_SYSTEM,
   corroborate: CORROBORATE_SYSTEM,
 };
+const KINDS = Object.keys(SYSTEM) as Kind[];
 
 interface Base {
   promise: Promise<LanguageModelSession>;
@@ -111,6 +112,19 @@ export class PromptApiProvider implements AiProvider {
     return this.status();
   }
 
+  /**
+   * Loads the model and primes a base session for every kind of question, so the next decisions
+   * are warm (Settings' `keepModelWarm`). Bases already there, or being created, are kept. Never
+   * throws. It stops waiting at the create limit, but a base that lands later is kept; one that
+   * fails is left for the next decision to create, as a cold one.
+   */
+  async warmUp(): Promise<void> {
+    if (!(await this.isAvailable())) return;
+    const lm = this.lm as LanguageModelStatic;
+    const bases = KINDS.map((kind) => (this.bases.get(kind) ?? this.create(lm, kind)).promise);
+    await Promise.allSettled(bases.map((b) => timebox(b, CREATE_TIMEOUT_MS)));
+  }
+
   async isConsentDialog(b: SerialisedBanner): Promise<AiResult<boolean>> {
     return this.ask("gate", gateInput(b), [GATE_SCHEMA], yesNo);
   }
@@ -171,11 +185,7 @@ export class PromptApiProvider implements AiProvider {
 
     let clone: LanguageModelSession | undefined;
     try {
-      if (!this.available) {
-        const st = await this.status();
-        if (st.state !== "available") return error("unavailable");
-        this.available = true;
-      }
+      if (!(await this.isAvailable())) return error("unavailable");
       const lm = this.lm as LanguageModelStatic;
 
       const entry = this.bases.get(kind) ?? this.create(lm, kind);
@@ -193,7 +203,12 @@ export class PromptApiProvider implements AiProvider {
       }
 
       const pending = base.clone();
-      const c = await timebox(pending, PROMPT_TIMEOUT_MS);
+      const c = await timebox(pending, PROMPT_TIMEOUT_MS).catch((e: unknown) => {
+        // A base that can't be cloned is no use to any later call either: a worker kept running
+        // (`keepModelWarm`) would otherwise keep it, and fail every decision, until Chrome stops.
+        this.drop(kind, entry);
+        throw e;
+      });
       if (c === TIMEOUT) {
         pending.then(destroyQuietly, () => {});
         return timeout();
@@ -221,6 +236,19 @@ export class PromptApiProvider implements AiProvider {
     } finally {
       if (clone) destroyQuietly(clone);
     }
+  }
+
+  /** Once `available`, it stays so: a model that later goes is an error on the call that finds it. */
+  private async isAvailable(): Promise<boolean> {
+    if (!this.available) this.available = (await this.status()).state === "available";
+    return this.available;
+  }
+
+  /** Forgets and destroys the base, unless another has taken its place. */
+  private drop(kind: Kind, entry: Base): void {
+    if (this.bases.get(kind) !== entry) return;
+    this.bases.delete(kind);
+    if (entry.session) destroyQuietly(entry.session);
   }
 
   private create(lm: LanguageModelStatic, kind: Kind): Base {

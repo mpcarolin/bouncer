@@ -76,15 +76,20 @@ export class DecisionLog {
     });
   }
 
-  /** Shallow merge, except `t`, which is merged one level down. Unknown ids are ignored. */
-  patch(id: string, p: Partial<LogEntry>): Promise<void> {
+  /**
+   * Shallow merge, except `t`, which is merged one level down. Resolves with the entry as patched;
+   * an unknown id is ignored and resolves with nothing.
+   */
+  patch(id: string, p: Partial<LogEntry>): Promise<LogEntry | undefined> {
     return this.serial(async () => {
       const entries = await this.load();
       const i = entries.findIndex((e) => e.id === id);
       const cur = entries[i];
-      if (!cur) return;
-      entries[i] = { ...cur, ...p, id, t: { ...cur.t, ...p.t } };
+      if (!cur) return undefined;
+      const next = { ...cur, ...p, id, t: { ...cur.t, ...p.t } };
+      entries[i] = next;
       await this.kv.set(KEY, entries);
+      return next;
     });
   }
 

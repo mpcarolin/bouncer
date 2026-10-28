@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  CORROBORATE_SYSTEM,
   corroborateInput,
   GATE_SCHEMA,
   GATE_SYSTEM,
   gateInput,
+  LABELS_SYSTEM,
   labelInput,
 } from "../../src/ai/prompt-api/prompts.ts";
 import { PromptApiProvider } from "../../src/ai/prompt-api/provider.ts";
@@ -215,6 +217,83 @@ describe("gate", () => {
       kind: "error",
       error: "InvalidStateError",
     });
+  });
+
+  it("a base that can't be cloned is destroyed, and the next call primes a new one", async () => {
+    const o: FakeOptions = { throwOn: { clone: namedError("InvalidStateError") } };
+    const { p, state } = make(o);
+    await p.isConsentDialog(banner);
+    expect(state.destroyed).toBe(1);
+    delete o.throwOn?.clone;
+    expect(await p.isConsentDialog(banner)).toMatchObject({ kind: "answer", meta: { cold: true } });
+    expect(state.createCalls).toHaveLength(2);
+  });
+});
+
+describe("warmUp", () => {
+  const SYSTEMS = (state: ReturnType<typeof make>["state"]) =>
+    state.createCalls.map((c) => c.initialPrompts?.[0]?.content);
+
+  it("primes a base for every kind of question, so the first decision after it is warm", async () => {
+    const { p, state } = make({ createMs: 500 });
+    const warming = p.warmUp();
+    await vi.advanceTimersByTimeAsync(500);
+    await warming;
+    expect(SYSTEMS(state)).toEqual([GATE_SYSTEM, LABELS_SYSTEM, CORROBORATE_SYSTEM]);
+    expect(await p.isConsentDialog(banner)).toMatchObject({
+      kind: "answer",
+      meta: { cold: false },
+    });
+    expect(await p.labelControls(banner, [0])).toMatchObject({ meta: { cold: false } });
+    expect(state.createCalls).toHaveLength(3);
+  });
+
+  it("creates nothing again: not on a second warm-up, nor for a decision that waits on the first", async () => {
+    const { p, state } = make({ createMs: 500 });
+    const warming = [p.warmUp(), p.warmUp()];
+    const decision = p.isConsentDialog(banner);
+    await vi.advanceTimersByTimeAsync(500);
+    await Promise.all(warming);
+    expect(await decision).toMatchObject({ kind: "answer", meta: { cold: true } });
+    await p.warmUp();
+    expect(state.createCalls).toHaveLength(3);
+  });
+
+  it("does nothing, and resolves, when the model isn't there", async () => {
+    for (const availability of ["downloadable", "downloading", "unavailable"] as const) {
+      const { p, state } = make({ availability });
+      await p.warmUp();
+      expect(state.createCalls).toHaveLength(0);
+    }
+    const hung = make({ availability: "never" });
+    const warming = hung.p.warmUp();
+    await vi.advanceTimersByTimeAsync(1500);
+    await warming;
+    expect(hung.state.createCalls).toHaveLength(0);
+    expect(await new PromptApiProvider(undefined).warmUp()).toBeUndefined();
+  });
+
+  it("never throws: a failed create is left for the next decision to try again", async () => {
+    const o: FakeOptions = { throwOn: { create: namedError("NotAllowedError") } };
+    const { p, state } = make(o);
+    await expect(p.warmUp()).resolves.toBeUndefined();
+    delete o.throwOn?.create;
+    expect(await p.isConsentDialog(banner)).toMatchObject({ kind: "answer", meta: { cold: true } });
+    expect(state.createCalls).toHaveLength(4);
+  });
+
+  it("stops waiting at the create limit, but keeps a base that lands later", async () => {
+    const { p, state } = make({ createMs: CREATE_TIMEOUT_MS + 5_000 });
+    const warming = p.warmUp();
+    await vi.advanceTimersByTimeAsync(CREATE_TIMEOUT_MS);
+    await warming;
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(state.destroyed).toBe(0);
+    expect(await p.isConsentDialog(banner)).toMatchObject({
+      kind: "answer",
+      meta: { cold: false },
+    });
+    expect(state.createCalls).toHaveLength(3);
   });
 });
 

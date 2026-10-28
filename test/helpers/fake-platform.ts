@@ -1,3 +1,4 @@
+import type { Badge } from "../../src/core/badge.ts";
 import {
   type FrameMessage,
   isToContent,
@@ -36,16 +37,26 @@ import type {
 export class MemoryKV implements KV {
   private data = new Map<string, unknown>();
 
+  /** `changed` hears of every write, after it, in a later microtask (as `storage.onChanged`). */
+  constructor(private readonly changed?: (key: string) => void) {}
+
   async get<T>(k: string): Promise<T | undefined> {
     return this.data.has(k) ? (structuredClone(this.data.get(k)) as T) : undefined;
   }
 
   async set(k: string, v: unknown): Promise<void> {
     this.data.set(k, structuredClone(v));
+    this.tell(k);
   }
 
   async remove(k: string): Promise<void> {
     this.data.delete(k);
+    this.tell(k);
+  }
+
+  private tell(k: string): void {
+    const changed = this.changed;
+    if (changed) queueMicrotask(() => changed(k));
   }
 }
 
@@ -60,10 +71,20 @@ export interface FakeBackground extends BackgroundPlatform {
   clickAction(tab: { url?: string }): void;
   /** Fire the registered `onInstalled` callbacks. */
   install(reason: string): void;
+  /** Fire the registered `onStartup` callbacks (the browser started). */
+  startup(): void;
+  /** How many `keepRunning` holds are in force. A restart ends them, as it ends a worker's timers. */
+  running: number;
+  /** One of the background's periodic wake-ups: every hold in force calls its `onTick`. */
+  tick(): void;
   /** Pages passed to `openPage`, in order. */
   opened: PageName[];
   /** The same calls with their query strings. */
   openedWith: { page: PageName; query?: Record<string, string> }[];
+  /** Each tab's toolbar mark, as the last `setBadge` for it left it. */
+  badges: Map<number, Badge | null>;
+  /** Every `setBadge` call, in order. */
+  badgeCalls: { tabId: number; badge: Badge | null }[];
   /** Every `sendToFrame` call, delivered or not, in order. */
   frameSends: { tabId: number; frameId: number; documentId?: string; msg: FrameMessage }[];
   /**
@@ -83,11 +104,21 @@ export function fakeBackground(): FakeBackground {
   let tabRemovedHandlers: ((tabId: number) => void)[] = [];
   let actionHandlers: ((tab: { url?: string }) => void)[] = [];
   let installedHandlers: ((reason: string) => void)[] = [];
+  let startupHandlers: (() => void)[] = [];
+  let localChangedHandlers: ((keys: string[]) => void)[] = [];
+  let holds = new Set<() => void>();
   const bg: FakeBackground = {
-    local: new MemoryKV(),
+    local: new MemoryKV((key) => {
+      for (const cb of localChangedHandlers) cb([key]);
+    }),
     session: new MemoryKV(),
+    get running() {
+      return holds.size;
+    },
     opened: [],
     openedWith: [],
+    badges: new Map(),
+    badgeCalls: [],
     frameSends: [],
     mainWorldCalls: [],
     mainWorldResult: () => undefined,
@@ -103,6 +134,19 @@ export function fakeBackground(): FakeBackground {
     },
     onInstalled(cb) {
       installedHandlers.push(cb);
+    },
+    onStartup(cb) {
+      startupHandlers.push(cb);
+    },
+    onLocalChanged(cb) {
+      localChangedHandlers.push(cb);
+    },
+    keepRunning(onTick) {
+      const hold = () => onTick();
+      holds.add(hold);
+      return () => {
+        holds.delete(hold);
+      };
     },
     async sendToFrame(tabId, frameId, msg, documentId) {
       bg.frameSends.push({ tabId, frameId, documentId, msg: structuredClone(msg) });
@@ -122,6 +166,10 @@ export function fakeBackground(): FakeBackground {
       bg.opened.push(p);
       bg.openedWith.push({ page: p, query: query && { ...query } });
     },
+    async setBadge(tabId, badge) {
+      bg.badgeCalls.push({ tabId, badge: structuredClone(badge) });
+      bg.badges.set(tabId, structuredClone(badge));
+    },
     async runInMainWorld(tabId, documentId, snippetId) {
       bg.mainWorldCalls.push({ tabId, documentId, snippetId });
       const held = [...bg.contents].some(
@@ -135,6 +183,9 @@ export function fakeBackground(): FakeBackground {
       tabRemovedHandlers = [];
       actionHandlers = [];
       installedHandlers = [];
+      startupHandlers = [];
+      localChangedHandlers = [];
+      holds = new Set();
     },
     removeTab(tabId) {
       for (const cb of tabRemovedHandlers) cb(tabId);
@@ -144,6 +195,12 @@ export function fakeBackground(): FakeBackground {
     },
     install(reason) {
       for (const cb of installedHandlers) cb(reason);
+    },
+    startup() {
+      for (const cb of startupHandlers) cb();
+    },
+    tick() {
+      for (const hold of [...holds]) hold();
     },
     async deliver(msg, from) {
       // Like Chrome, a message with no listener rejects.

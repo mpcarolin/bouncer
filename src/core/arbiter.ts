@@ -50,21 +50,23 @@ export class Arbiter {
   /**
    * A new top document: fresh state. Idempotent for the same document, so a repeated hello or
    * navigation event never wipes a claim. State created before any document was known (autoconsent
-   * spoke first) is kept and attached to this document.
+   * spoke first) is kept and attached to this document. Resolves true when the state was fresh:
+   * the tab has a new page.
    */
-  topDocument(tabId: number, documentId: string): Promise<void> {
+  topDocument(tabId: number, documentId: string): Promise<boolean> {
     return this.serial(tabId, async () => {
       const s = await this.kv.get<ArbState>(key(tabId));
-      if (s && s.documentId === documentId) return;
+      if (s && s.documentId === documentId) return false;
       if (s && s.documentId === null) {
         await this.kv.set(key(tabId), { ...s, documentId } satisfies ArbState);
-        return;
+        return false;
       }
       await this.kv.set(key(tabId), {
         documentId,
         owner: "none",
         topCmp: false,
       } satisfies ArbState);
+      return true;
     });
   }
 

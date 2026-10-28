@@ -97,6 +97,16 @@ describe("Arbiter", () => {
     });
   });
 
+  it("topDocument says whether the tab has a new page: not for the same document, nor one autoconsent spoke for first", async () => {
+    const { session } = fakeBackground();
+    const arb = new Arbiter(session);
+    expect(await arb.topDocument(1, "doc-1")).toBe(true);
+    expect(await arb.topDocument(1, "doc-1")).toBe(false);
+    expect(await arb.topDocument(1, "doc-2")).toBe(true);
+    await arb.cmpDetected(2, 0); // before any document is on record for tab 2
+    expect(await arb.topDocument(2, "doc-9")).toBe(false);
+  });
+
   it("a duplicate topDocument for the same document keeps the claim", async () => {
     const { arb } = await setup();
     await arb.claimForBouncer(1, "doc-1");

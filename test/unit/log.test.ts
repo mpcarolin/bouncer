@@ -58,8 +58,9 @@ describe("DecisionLog", () => {
   it("patch merges t shallowly and other fields by replacement", async () => {
     const { log } = setup();
     const id = await log.add(entry(0, { t: { found: 5 }, notes: ["a"] }));
-    await log.patch(id, { t: { decided: 9 }, outcome: "failed", notes: ["b"] });
+    const patched = await log.patch(id, { t: { decided: 9 }, outcome: "failed", notes: ["b"] });
     const [e] = await log.list();
+    expect(patched).toEqual(e);
     expect(e?.t).toEqual({ found: 5, decided: 9 });
     expect(e?.outcome).toBe("failed");
     expect(e?.notes).toEqual(["b"]);
@@ -69,7 +70,7 @@ describe("DecisionLog", () => {
   it("patch on an unknown id is a no-op", async () => {
     const { log } = setup();
     await log.add(entry(0));
-    await log.patch("nope", { outcome: "failed" });
+    expect(await log.patch("nope", { outcome: "failed" })).toBeUndefined();
     expect((await log.list())[0]?.outcome).toBe("dismissed");
   });
 

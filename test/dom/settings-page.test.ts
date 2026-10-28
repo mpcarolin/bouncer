@@ -64,9 +64,11 @@ describe("settings page: the switches", () => {
       closeAction: "leave",
       agreeToDismiss: true,
       onFailed: "keep_hidden",
+      keepModelWarm: true,
     });
     const { root } = await open();
     expect(input(root, "Bouncer is on").checked).toBe(false);
+    expect(input(root, "Keep the on-device model loaded").checked).toBe(true);
     expect(input(group(root, "only Close"), "leave it").checked).toBe(true);
     expect(input(group(root, "no way to refuse"), "agree to dismiss").checked).toBe(true);
     expect(input(group(root, "dismissal fails"), "keep it hidden").checked).toBe(true);
@@ -78,6 +80,18 @@ describe("settings page: the switches", () => {
     expect(input(group(root, "only Close"), "click Close").checked).toBe(true);
     expect(input(group(root, "no way to refuse"), "leave it").checked).toBe(true);
     expect(input(group(root, "dismissal fails"), "put it back").checked).toBe(true);
+    expect(input(root, "Keep the on-device model loaded").checked).toBe(false);
+  });
+
+  it("keeping the model loaded persists, and the background keeps running while it is on", async () => {
+    const { root } = await open();
+    expect(root.textContent).toContain("stays in memory");
+    input(root, "Keep the on-device model loaded").click();
+    await vi.waitFor(async () => expect((await saved()).keepModelWarm).toBe(true));
+    await vi.waitFor(() => expect(bg.running).toBe(1));
+    input(root, "Keep the on-device model loaded").click();
+    await vi.waitFor(async () => expect((await saved()).keepModelWarm).toBe(false));
+    await vi.waitFor(() => expect(bg.running).toBe(0));
   });
 
   it("the global switch persists", async () => {

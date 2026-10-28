@@ -1,6 +1,7 @@
 // autoconsent's path (§1) through Bouncer's background host, with autoconsent's real content
 // bundle: detection, its `eval` steps run in the page's main world, the arbiter's opt-out, and
 // the self-test. Bouncer's own path must stand down on the page autoconsent detected (§2b).
+import { RULE_BADGE } from "../src/core/badge.ts";
 import type { LogEntry } from "../src/core/log.ts";
 import { expect, siteOf, test } from "./fixtures.ts";
 
@@ -38,12 +39,17 @@ test("a Cookiebot-shaped CMP is refused by autoconsent, and Bouncer's own path c
   page,
   pageUrl,
   readLog,
+  badge,
 }) => {
   const site = siteOf("cookiebot");
   await page.goto(pageUrl("cookiebot"));
   const entry = await acOutcome(readLog, site);
   expect(entry).toMatchObject({ rule: "Cybotcookiebot", outcome: "dismissed" });
   expect(entry.verification).toBe("self_test_passed");
+  // The toolbar says a rule handled it.
+  await expect
+    .poll(() => badge(pageUrl("cookiebot")))
+    .toEqual({ text: RULE_BADGE.text, title: RULE_BADGE.title });
   // autoconsent clicked the mock's own "Deny": the CMP recorded a refusal and closed its dialog.
   await expect(page.locator("#status")).toHaveText("consent: declined");
   await expect(page.locator("#site-cmp-dialog")).toBeHidden();

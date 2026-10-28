@@ -96,8 +96,17 @@ export interface FakeChrome {
   scriptError: Error | undefined;
   /** `runtime.sendMessage` calls. */
   messages: unknown[];
+  /** `action.set*` calls, as [method, details]. */
+  actionCalls: [string, unknown][];
+  /** Makes every `action.set*` call reject with it, as Chrome does for a closed tab. */
+  actionError: Error | undefined;
   /** Listener counts, to check that registration happened. */
-  listenerCounts(): Record<"message" | "connect" | "tabRemoved" | "action" | "installed", number>;
+  listenerCounts(): Record<
+    "message" | "connect" | "tabRemoved" | "action" | "installed" | "startup" | "storageChanged",
+    number
+  >;
+  /** `runtime.getPlatformInfo` calls. */
+  platformInfoCalls: number;
   /** Dispatch a message to the `onMessage` listeners as Chrome would. */
   deliver(msg: unknown, sender?: FakeSender): Delivery;
   removeTab(tabId: number): void;
@@ -110,6 +119,10 @@ export interface FakeChrome {
   connect(name: string): { accepted: boolean; disconnected: boolean };
   /** Fire `runtime.onInstalled`. */
   installed(reason: string): void;
+  /** Fire `runtime.onStartup`. */
+  startup(): void;
+  /** Fire `storage.onChanged` for these keys of `area`. */
+  storageChanged(keys: string[], area: string): void;
   /** The object installed as `globalThis.chrome`. */
   readonly chrome: typeof chrome;
 }
@@ -126,6 +139,10 @@ export function installFakeChrome(): FakeChrome {
   const onClicked = new FakeEvent<[tab: { id?: number; url?: string }]>();
   const onInstalled = new FakeEvent<[details: { reason: string }]>();
   const onConnect = new FakeEvent<[port: chrome.runtime.Port]>();
+  const onStartup = new FakeEvent<[]>();
+  const onStorageChanged = new FakeEvent<
+    [changes: Record<string, { oldValue?: unknown; newValue?: unknown }>, area: string]
+  >();
 
   const fc: FakeChrome = {
     sender: {
@@ -145,13 +162,18 @@ export function installFakeChrome(): FakeChrome {
     scriptResults: undefined,
     scriptError: undefined,
     messages: [],
+    actionCalls: [],
+    actionError: undefined,
     listenerCounts: () => ({
       message: onMessage.listeners.length,
       connect: onConnect.listeners.length,
       tabRemoved: onTabRemoved.listeners.length,
       action: onClicked.listeners.length,
       installed: onInstalled.listeners.length,
+      startup: onStartup.listeners.length,
+      storageChanged: onStorageChanged.listeners.length,
     }),
+    platformInfoCalls: 0,
     deliver(msg, sender = fc.sender) {
       let respond: (value?: unknown) => void = () => {};
       const reply = new Promise<unknown>((resolve) => {
@@ -190,6 +212,9 @@ export function installFakeChrome(): FakeChrome {
       return opened;
     },
     installed: (reason) => void onInstalled.fire({ reason }),
+    startup: () => void onStartup.fire(),
+    storageChanged: (keys, area) =>
+      void onStorageChanged.fire(Object.fromEntries(keys.map((k) => [k, { newValue: 1 }])), area),
     chrome: undefined as unknown as typeof chrome,
   };
 
@@ -198,6 +223,11 @@ export function installFakeChrome(): FakeChrome {
       onMessage,
       onInstalled,
       onConnect,
+      onStartup,
+      getPlatformInfo: async () => {
+        fc.platformInfoCalls++;
+        return { os: "mac", arch: "arm64", nacl_arch: "arm" };
+      },
       getURL: (path: string) => `${EXTENSION_ORIGIN}/${path}`,
       sendMessage: async (msg: unknown) => {
         fc.messages.push(structuredClone(msg));
@@ -219,8 +249,19 @@ export function installFakeChrome(): FakeChrome {
         return fc.sendReply;
       },
     },
-    action: { onClicked },
-    storage: { local: fc.local, session: fc.session },
+    action: {
+      onClicked,
+      ...Object.fromEntries(
+        ["setBadgeText", "setBadgeBackgroundColor", "setBadgeTextColor", "setTitle"].map((m) => [
+          m,
+          async (details: unknown) => {
+            fc.actionCalls.push([m, structuredClone(details)]);
+            if (fc.actionError) throw fc.actionError;
+          },
+        ]),
+      ),
+    },
+    storage: { local: fc.local, session: fc.session, onChanged: onStorageChanged },
     scripting: {
       executeScript: async (injection: ExecuteScriptCall) => {
         fc.scripts.push(injection);

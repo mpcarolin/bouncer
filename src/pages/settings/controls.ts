@@ -130,6 +130,16 @@ export async function mountControls(
         }),
       "This is for when Bouncer has hidden or clicked something and the banner is not verifiably gone.",
     ),
+    checkbox("Keep the on-device model loaded", settings.keepModelWarm, (on) =>
+      change((s) => {
+        s.keepModelWarm = on;
+      }),
+    ),
+    h(
+      "p",
+      { class: "dim" },
+      "Banners the model handles are then refused without first waiting about 10 seconds for it to load. The model stays in memory for as long as Chrome is open.",
+    ),
     status,
   );
 }

@@ -6,6 +6,9 @@ import { chromeKV, openExtensionPage } from "./shared.ts";
 /** autoconsent's compact rules, which the build copies, unmodified, beside its content bundle. */
 const RULES_PATH = "vendor/autoconsent/compact-rules.json";
 
+/** Under the 30 s of inactivity after which Chrome stops an extension's service worker. */
+const KEEP_RUNNING_MS = 20_000;
+
 /**
  * autoconsent's library for the core. The rules are read from the extension's own package (not
  * the network) once per service-worker lifetime; a failed read is tried again by the next frame.
@@ -104,7 +107,51 @@ export function chromeBackground(): BackgroundPlatform {
       chrome.runtime.onInstalled.addListener((details) => cb(details.reason));
     },
 
+    onStartup(cb) {
+      chrome.runtime.onStartup.addListener(() => cb());
+    },
+
+    onLocalChanged(cb) {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === "local") cb(Object.keys(changes));
+      });
+    },
+
+    /**
+     * Calling an extension API resets the worker's idle timer (Chrome 110 and later, as Chrome's
+     * service-worker lifecycle documents), so one cheap call per wake-up keeps it running.
+     */
+    keepRunning(onTick) {
+      const timer = setInterval(() => {
+        chrome.runtime.getPlatformInfo().catch(() => {});
+        onTick();
+      }, KEEP_RUNNING_MS);
+      return () => clearInterval(timer);
+    },
+
     openPage: openExtensionPage,
+
+    /**
+     * Tab-specific action values, which Chrome drops when the tab closes and (not documented, but
+     * so in Chrome 156) when it navigates. The colours go first, so the text never shows on
+     * Chrome's default badge colour. With no mark, the title goes back to the manifest's
+     * `default_title`.
+     */
+    async setBadge(tabId, badge) {
+      if (!badge) {
+        await Promise.all([
+          chrome.action.setBadgeText({ tabId, text: "" }),
+          chrome.action.setTitle({ tabId, title: "Bouncer" }),
+        ]);
+        return;
+      }
+      await Promise.all([
+        chrome.action.setBadgeBackgroundColor({ tabId, color: badge.color }),
+        chrome.action.setBadgeTextColor({ tabId, color: "#ffffff" }),
+        chrome.action.setBadgeText({ tabId, text: badge.text }),
+        chrome.action.setTitle({ tabId, title: badge.title }),
+      ]);
+    },
 
     /**
      * autoconsent's `eval` rule steps run its own snippets, so the page's JS never chooses the

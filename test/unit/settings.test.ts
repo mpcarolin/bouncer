@@ -15,7 +15,15 @@ describe("settings", () => {
       closeAction: "click",
       agreeToDismiss: false,
       onFailed: "restore",
+      keepModelWarm: false,
     });
+  });
+
+  it("reads a record stored before keepModelWarm existed as off", async () => {
+    const { local } = fakeBackground();
+    const { keepModelWarm: _, ...older } = DEFAULT_SETTINGS;
+    await local.set("settings", { ...older, closeAction: "leave" });
+    expect(await loadSettings(local)).toMatchObject({ closeAction: "leave", keepModelWarm: false });
   });
 
   it("loads defaults when nothing is stored, and round-trips a save", async () => {

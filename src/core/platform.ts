@@ -1,3 +1,4 @@
+import type { Badge } from "./badge.ts";
 import type { FrameMessage, ReplyOf, ToBackground, ToContent } from "./messages.ts";
 
 export interface KV {
@@ -55,8 +56,19 @@ export interface BackgroundPlatform {
   onActionClicked(cb: (tab: { url?: string }) => void): void;
   /** `reason` is the browser's word for why: `install`, `update`, … */
   onInstalled(cb: (reason: string) => void): void;
+  /** The browser started with this profile. Listening for it starts the background then too. */
+  onStartup(cb: () => void): void;
+  /** Keys of `local` that changed, whoever changed them (the settings page, say). */
+  onLocalChanged(cb: (keys: string[]) => void): void;
+  /**
+   * Keeps the background running, which an idle one otherwise isn't, until the returned function
+   * is called. `onTick` is called on each of the periodic wake-ups that keep it running.
+   */
+  keepRunning(onTick: () => void): () => void;
   /** Opens an extension page in a new tab; `query` becomes its query string. */
   openPage(p: PageName, query?: Record<string, string>): Promise<void>;
+  /** Marks the toolbar icon for that tab only; `null` takes the mark off. Rejects for a closed tab. */
+  setBadge(tabId: number, badge: Badge | null): Promise<void>;
   /**
    * Runs autoconsent's eval snippet `snippetId` in that document's main world, wherever in the tab
    * it is, and resolves with its result: never in a document that replaced it. Rejects for an

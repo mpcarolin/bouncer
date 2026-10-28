@@ -1,6 +1,7 @@
 // Bouncer's own path (§2) in Chromium with the extension loaded: the background, the content
 // script, autoconsent's bundle and the mock AI provider together, on local pages. Each test has
 // a fresh profile, and each page its own host, so no test sees another's log, rules or settings.
+import { AI_BADGE } from "../src/core/badge.ts";
 import { CLAIM_WAIT_MS } from "../src/core/config.ts";
 import { expect, expectShown, siteOf, test } from "./fixtures.ts";
 
@@ -29,6 +30,24 @@ test("custom-reject: the reject button is clicked and the banner is dismissed", 
   await expect(page.locator("#status")).toHaveText("consent: rejected");
   await expect(page.locator("#my-cookie-notice")).toHaveCount(0);
   await expect(page.locator("[data-bouncer-hidden], style[data-bouncer]")).toHaveCount(0);
+});
+
+test("the toolbar badge: AI once the model's refusal is done, gone when the tab loads another page", async ({
+  page,
+  pageUrl,
+  decided,
+  badge,
+}) => {
+  const url = pageUrl("custom-reject", "badge-ai");
+  await page.goto(url);
+  expect(await decided(siteOf("badge-ai"))).toMatchObject({ path: "ai", outcome: "dismissed" });
+  await expect.poll(() => badge(url)).toEqual({ text: AI_BADGE.text, title: AI_BADGE.title });
+
+  // A page whose overlay the gate rejects: nothing dismissed, so no mark.
+  const next = pageUrl("login-wall", "badge-next");
+  await page.goto(next);
+  expect(await decided(siteOf("badge-next"))).toMatchObject({ outcome: "not_consent" });
+  expect(await badge(next)).toEqual({ text: "", title: "Bouncer" });
 });
 
 test("custom-settings: settings, optional toggles off, do-not-sell on, saved", async ({

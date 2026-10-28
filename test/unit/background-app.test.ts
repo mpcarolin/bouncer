@@ -2,13 +2,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AiMeta, AiProvider } from "../../src/core/ai.ts";
 import type { AcLib } from "../../src/core/autoconsent-bg.ts";
 import { startBackground } from "../../src/core/background-app.ts";
+import { AI_BADGE, RULE_BADGE } from "../../src/core/badge.ts";
 import { MAX_MODEL_CALLS_PER_PAGE } from "../../src/core/config.ts";
 import type { LearnedRule } from "../../src/core/learned.ts";
 import type { LogEntry } from "../../src/core/log.ts";
 import type { Sender } from "../../src/core/platform.ts";
 import { DEFAULT_SETTINGS, saveSettings } from "../../src/core/settings.ts";
 import type { SerialisedBanner } from "../../src/core/types.ts";
-import { type FakeBackground, fakeBackground, fakeContent } from "../helpers/fake-platform.ts";
+import {
+  type FakeBackground,
+  fakeBackground,
+  fakeContent,
+  fakePage,
+} from "../helpers/fake-platform.ts";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -17,11 +23,14 @@ const banner: SerialisedBanner = { text: "We use cookies", controls: [] };
 
 /** A provider that counts the model calls that reach it. */
 function countingProvider() {
-  const calls = { model: 0, status: 0 };
+  const calls = { model: 0, status: 0, warm: 0 };
   const provider: AiProvider = {
     status: async () => {
       calls.status++;
       return { state: "available", onDevice: true };
+    },
+    warmUp: async () => {
+      calls.warm++;
     },
     isConsentDialog: async () => {
       calls.model++;
@@ -45,6 +54,9 @@ function started(over: Parameters<typeof startBackground>[2] = {}) {
   const app = startBackground(bg, provider, over);
   return { bg, app, calls, provider };
 }
+
+/** Lets every queued microtask and storage event run. */
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** A reply that must have come: fails the test on `undefined`, which is what a failed background sends. */
 async function replied<T>(reply: Promise<T | undefined>): Promise<T> {
@@ -384,6 +396,162 @@ describe("log and logPatch", () => {
     await fakeContent(bg).send({ type: "log", entry: entry("a.example") });
     expect(await bg.local.get("decisionLog")).toHaveLength(1);
     expect(await bg.session.get("decisionLog")).toBeUndefined();
+  });
+});
+
+describe("keeping the model warm", () => {
+  const warmOn = (bg: FakeBackground, keepModelWarm: boolean) =>
+    saveSettings(bg.local, { ...DEFAULT_SETTINGS, keepModelWarm });
+
+  it("is off by default: the background is left to stop when idle, and nothing is warmed", async () => {
+    const { bg, calls } = started();
+    await flush();
+    expect(bg.running).toBe(0);
+    expect(calls.warm).toBe(0);
+  });
+
+  it("on when the background starts: it keeps running and warms the model at once and on every tick", async () => {
+    const bg = fakeBackground();
+    await warmOn(bg, true);
+    const { provider, calls } = countingProvider();
+    startBackground(bg, provider);
+    await vi.waitFor(() => expect(bg.running).toBe(1));
+    expect(calls.warm).toBe(1);
+    bg.tick();
+    bg.tick();
+    expect(calls.warm).toBe(3);
+  });
+
+  it("follows the setting as the settings page changes it, holding the background once", async () => {
+    const { bg, calls } = started();
+    await warmOn(bg, true);
+    await vi.waitFor(() => expect(bg.running).toBe(1));
+    expect(calls.warm).toBe(1);
+    // Another change, to the settings or to anything else stored, starts nothing twice.
+    await saveSettings(bg.local, {
+      ...DEFAULT_SETTINGS,
+      keepModelWarm: true,
+      closeAction: "leave",
+    });
+    await fakeContent(bg).send({ type: "log", entry: entry("a.example") });
+    await flush();
+    expect(bg.running).toBe(1);
+    expect(calls.warm).toBe(1);
+
+    await warmOn(bg, false);
+    await vi.waitFor(() => expect(bg.running).toBe(0));
+    bg.tick();
+    expect(calls.warm).toBe(1);
+  });
+
+  it("lets go while Bouncer is switched off, which uses no model", async () => {
+    const { bg } = started();
+    await warmOn(bg, true);
+    await vi.waitFor(() => expect(bg.running).toBe(1));
+    await saveSettings(bg.local, { ...DEFAULT_SETTINGS, keepModelWarm: true, enabled: false });
+    await vi.waitFor(() => expect(bg.running).toBe(0));
+    await warmOn(bg, true);
+    await vi.waitFor(() => expect(bg.running).toBe(1));
+  });
+
+  it("starts again in a restarted worker, and with the browser", async () => {
+    const bg = fakeBackground();
+    await warmOn(bg, true);
+    const { provider, calls } = countingProvider();
+    startBackground(bg, provider);
+    await vi.waitFor(() => expect(bg.running).toBe(1));
+
+    bg.restart(); // Chrome stopped the worker anyway (an update, say): its hold went with it
+    expect(bg.running).toBe(0);
+    startBackground(bg, provider);
+    await vi.waitFor(() => expect(bg.running).toBe(1));
+    bg.startup();
+    await flush();
+    expect(bg.running).toBe(1);
+    expect(calls.warm).toBe(2);
+  });
+
+  it("a settings read that fails is logged, and changes nothing", async () => {
+    const bg = fakeBackground();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    bg.local.get = () => Promise.reject(new Error("storage is gone"));
+    startBackground(bg, countingProvider().provider);
+    await vi.waitFor(() => expect(error).toHaveBeenCalled());
+    expect(bg.running).toBe(0);
+  });
+});
+
+describe("the toolbar badge", () => {
+  it("marks the tab once its banner is dismissed: AI for the model's, a rule's otherwise", async () => {
+    const { bg } = started();
+    const top = fakeContent(bg, { tabId: 4 });
+    await top.send({ type: "hello" });
+    const { id } = await replied(
+      top.send({ type: "log", entry: { ...entry("a.example"), path: "ai", outcome: "working" } }),
+    );
+    expect(bg.badges.get(4) ?? null).toBeNull();
+    await top.send({ type: "logPatch", id, patch: { outcome: "dismissed" } });
+    expect(bg.badges.get(4)).toEqual(AI_BADGE);
+
+    const other = fakeContent(bg, { tabId: 5 });
+    await other.send({ type: "hello" });
+    await other.send({
+      type: "log",
+      entry: { ...entry("b.example"), path: "learned", outcome: "dismissed_unverified" },
+    });
+    expect(bg.badges.get(5)).toEqual(RULE_BADGE);
+  });
+
+  it("leaves the tab unmarked for a banner that wasn't dismissed", async () => {
+    const { bg } = started();
+    const top = fakeContent(bg, { tabId: 4 });
+    await top.send({ type: "hello" });
+    for (const outcome of ["failed", "unsure", "no_option", "not_consent"] as const) {
+      await top.send({ type: "log", entry: { ...entry("a.example"), path: "ai", outcome } });
+    }
+    expect(bg.badgeCalls.filter((c) => c.badge !== null)).toEqual([]);
+  });
+
+  it("is cleared when a new page loads in the tab, and kept through a repeated hello", async () => {
+    const { bg } = started();
+    const top = fakeContent(bg, { tabId: 4, documentId: "d1" });
+    await top.send({ type: "hello" });
+    await top.send({ type: "log", entry: { ...entry("a.example"), outcome: "dismissed" } });
+    await top.send({ type: "hello" });
+    expect(bg.badges.get(4)).toEqual(RULE_BADGE);
+
+    top.sender.documentId = "d2"; // the tab navigated
+    await top.send({ type: "hello" });
+    expect(bg.badges.get(4)).toBeNull();
+  });
+
+  it("is not touched by a child frame's hello, or by a sender with no tab", async () => {
+    const { bg } = started();
+    const top = fakeContent(bg, { tabId: 4, documentId: "d1" });
+    await top.send({ type: "hello" });
+    await top.send({ type: "log", entry: { ...entry("a.example"), outcome: "dismissed" } });
+    await fakeContent(bg, { tabId: 4, frameId: 3, documentId: "child" }).send({ type: "hello" });
+    expect(bg.badges.get(4)).toEqual(RULE_BADGE);
+
+    await fakePage(bg).send({
+      type: "log",
+      entry: { ...entry("a.example"), outcome: "dismissed" },
+    });
+    expect(bg.badgeCalls.filter((c) => c.badge !== null).map((c) => c.tabId)).toEqual([4]);
+  });
+
+  it("a badge that can't be set fails nothing else: the log is still written and answered", async () => {
+    const { bg, app } = started();
+    bg.setBadge = () => Promise.reject(new Error("No tab with id: 4"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const top = fakeContent(bg, { tabId: 4 });
+    const reply = await top.send({
+      type: "log",
+      entry: { ...entry("a.example"), outcome: "dismissed" },
+    });
+    expect(reply).toMatchObject({ id: expect.any(String) });
+    expect(await app.log.list()).toHaveLength(1);
+    await vi.waitFor(() => expect(error).toHaveBeenCalled());
   });
 });
 
@@ -745,6 +913,7 @@ describe("a failing message", () => {
 
   it("still gets a reply, so the content script's promise settles", async () => {
     const { bg } = started();
+    await flush(); // the worker's own start-up read of the settings
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     brokenStorage(bg);
     const top = fakeContent(bg);
@@ -756,6 +925,7 @@ describe("a failing message", () => {
 
   it("does not stop later messages from being served", async () => {
     const { bg } = started();
+    await flush(); // the worker's own start-up read of the settings
     vi.spyOn(console, "error").mockImplementation(() => {});
     const get = vi.spyOn(bg.local, "get").mockRejectedValueOnce(new Error("blip"));
     const top = fakeContent(bg);

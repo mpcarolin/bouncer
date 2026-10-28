@@ -1,4 +1,5 @@
 import type { Arbiter } from "./arbiter.ts";
+import { badgeFor } from "./badge.ts";
 import { AC_OPTOUT_TIMEOUT_MS, PRERENDER_HOLDS_PER_TAB } from "./config.ts";
 import type { DecisionLog, LogEntry } from "./log.ts";
 import type { AcMessage, AutoconsentConfig, FrameMessage } from "./messages.ts";
@@ -486,7 +487,14 @@ export class AutoconsentHost {
   ): Promise<void> {
     this.stop(s.tabId, frameId, o, "ended");
     this.toFrame(s, 0, { type: "acOutcome", outcome });
+    this.mark(s.tabId, outcome);
     await this.logPatch(o, { outcome, ...patch });
+  }
+
+  /** Marks the tab's toolbar icon. The mark is cosmetic: failing to set it fails nothing else. */
+  private mark(tabId: number, outcome: Outcome): void {
+    const b = badgeFor({ path: "autoconsent", outcome });
+    if (b) this.p.setBadge(tabId, b).catch((e) => report(`failed to mark tab ${tabId}`, e));
   }
 
   /**

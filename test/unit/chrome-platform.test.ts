@@ -3,6 +3,7 @@ import { evalSnippets, filterCompactRules, type IndexedCMPRuleset } from "@duckd
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AiProvider } from "../../src/core/ai.ts";
 import { startBackground } from "../../src/core/background-app.ts";
+import { AI_BADGE, RULE_BADGE } from "../../src/core/badge.ts";
 import { DEFAULT_SETTINGS } from "../../src/core/settings.ts";
 import { chromeAcLib, chromeBackground } from "../../src/platform/chrome/background.ts";
 import { chromeContent } from "../../src/platform/chrome/content.ts";
@@ -203,6 +204,67 @@ describe("chromeBackground events and actions", () => {
     expect(reasons).toEqual(["install", "update"]);
   });
 
+  it("onStartup passes the browser's start", () => {
+    const fc = installFakeChrome();
+    let started = 0;
+    chromeBackground().onStartup(() => started++);
+    fc.startup();
+    expect(started).toBe(1);
+  });
+
+  it("onLocalChanged passes the keys changed in local storage, and nothing for another area", () => {
+    const fc = installFakeChrome();
+    const seen: string[][] = [];
+    chromeBackground().onLocalChanged((keys) => seen.push(keys));
+    fc.storageChanged(["settings", "decisionLog"], "local");
+    fc.storageChanged(["arb:1"], "session");
+    expect(seen).toEqual([["settings", "decisionLog"]]);
+  });
+
+  it("keepRunning calls an extension API, then onTick, every 20 s until released", async () => {
+    vi.useFakeTimers();
+    try {
+      const fc = installFakeChrome();
+      let ticks = 0;
+      const release = chromeBackground().keepRunning(() => ticks++);
+      await vi.advanceTimersByTimeAsync(19_999);
+      expect([fc.platformInfoCalls, ticks]).toEqual([0, 0]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect([fc.platformInfoCalls, ticks]).toEqual([1, 1]);
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect([fc.platformInfoCalls, ticks]).toEqual([2, 2]);
+      release();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect([fc.platformInfoCalls, ticks]).toEqual([2, 2]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("setBadge marks that tab's icon only, colour first, and null takes the mark off", async () => {
+    const fc = installFakeChrome();
+    const bg = chromeBackground();
+    await bg.setBadge(4, RULE_BADGE);
+    expect(fc.actionCalls).toEqual([
+      ["setBadgeBackgroundColor", { tabId: 4, color: RULE_BADGE.color }],
+      ["setBadgeTextColor", { tabId: 4, color: "#ffffff" }],
+      ["setBadgeText", { tabId: 4, text: RULE_BADGE.text }],
+      ["setTitle", { tabId: 4, title: RULE_BADGE.title }],
+    ]);
+    fc.actionCalls.length = 0;
+    await bg.setBadge(4, null);
+    expect(fc.actionCalls).toEqual([
+      ["setBadgeText", { tabId: 4, text: "" }],
+      ["setTitle", { tabId: 4, title: "Bouncer" }],
+    ]);
+  });
+
+  it("setBadge rejects when Chrome does (the tab has closed)", async () => {
+    const fc = installFakeChrome();
+    fc.actionError = new Error("No tab with id: 4.");
+    await expect(chromeBackground().setBadge(4, AI_BADGE)).rejects.toThrow("No tab with id");
+  });
+
   it("openPage opens the extension page in a new tab, with the query string", async () => {
     const fc = installFakeChrome();
     const bg = chromeBackground();
@@ -379,6 +441,8 @@ describe("the background over the Chrome adapters", () => {
       tabRemoved: 1,
       action: 1,
       installed: 1,
+      startup: 1,
+      storageChanged: 1,
     });
   });
 

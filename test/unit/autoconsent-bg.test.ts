@@ -2,6 +2,7 @@ import type { BackgroundMessage, Config, ContentScriptMessage } from "@duckduckg
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Arbiter } from "../../src/core/arbiter.ts";
 import { type AcLib, AutoconsentHost, acConfig } from "../../src/core/autoconsent-bg.ts";
+import { RULE_BADGE } from "../../src/core/badge.ts";
 import { AC_OPTOUT_TIMEOUT_MS, PRERENDER_HOLDS_PER_TAB } from "../../src/core/config.ts";
 import { DecisionLog, type LogEntry } from "../../src/core/log.ts";
 import type {
@@ -541,6 +542,59 @@ describe("outcomes", () => {
     });
     expect(count(w.cmp, "restoreAcStyles")).toBe(0);
     expect(w.top.inbox.at(-1)).toEqual({ type: "acOutcome", outcome: "dismissed_unverified" });
+  });
+});
+
+describe("the toolbar badge", () => {
+  const marks = (w: World) => w.bg.badgeCalls.filter((c) => c.badge !== null);
+
+  it("marks the tab as handled by a rule when autoconsent's opt-out succeeds, from any frame", async () => {
+    const w = new World();
+    await w.open();
+    await w.from(w.cmp, popupFound());
+    await w.from(w.cmp, optOutResult(true, true));
+    await w.from(w.cmp, autoconsentDone());
+    expect(marks(w)).toEqual([]); // not before the self-test says so
+    await w.from(w.cmp, selfTestResult(true));
+    expect(marks(w)).toEqual([{ tabId: TAB, badge: RULE_BADGE }]);
+
+    const u = new World();
+    await u.open();
+    await u.from(u.top, popupFound());
+    await u.from(u.top, optOutResult(true, false));
+    await u.from(u.top, autoconsentDone());
+    expect(marks(u)).toEqual([{ tabId: TAB, badge: RULE_BADGE }]);
+  });
+
+  it("marks a late success, and nothing for a failure", async () => {
+    const w = new World();
+    await w.open();
+    await w.from(w.cmp, popupFound());
+    await w.wait(AC_OPTOUT_TIMEOUT_MS);
+    expect((await w.entry()).outcome).toBe("failed");
+    expect(marks(w)).toEqual([]);
+    await w.from(w.cmp, optOutResult(true));
+    await w.from(w.cmp, autoconsentDone());
+    expect(marks(w)).toEqual([{ tabId: TAB, badge: RULE_BADGE }]);
+
+    const f = new World();
+    await f.open();
+    await f.from(f.cmp, popupFound());
+    await f.from(f.cmp, optOutResult(false));
+    expect(marks(f)).toEqual([]);
+  });
+
+  it("a mark that can't be set fails nothing: the outcome is still sent and logged", async () => {
+    const w = new World();
+    w.bg.setBadge = () => Promise.reject(new Error("No tab with id: 1"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    await w.open();
+    await w.from(w.top, popupFound());
+    await w.from(w.top, optOutResult(true, false));
+    await w.from(w.top, autoconsentDone());
+    expect((await w.entry()).outcome).toBe("dismissed_unverified");
+    expect(w.top.inbox.at(-1)).toEqual({ type: "acOutcome", outcome: "dismissed_unverified" });
+    await vi.waitFor(() => expect(error).toHaveBeenCalled());
   });
 });
 

@@ -19,6 +19,11 @@ export interface AiStatus {
 
 export interface AiProvider {
   status(): Promise<AiStatus>;
+  /**
+   * Loads the model ahead of the next decision, if it can; never throws. For keeping the model
+   * loaded (Settings' `keepModelWarm`). A provider with nothing to load leaves it out.
+   */
+  warmUp?(): Promise<void>;
   isConsentDialog(b: SerialisedBanner): Promise<AiResult<boolean>>;
   labelControls(
     b: SerialisedBanner,

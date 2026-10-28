@@ -54,6 +54,8 @@ export interface ExtensionFixtures {
   setSettings(s: Partial<Settings>): Promise<void>;
   /** A value in the extension's local storage. */
   stored(key: string): Promise<unknown>;
+  /** The toolbar icon's badge text and tooltip for the tab showing a page on `url`'s host. */
+  badge(url: string): Promise<{ text: string; title: string }>;
 }
 
 export const test = base.extend<ExtensionFixtures, { pagesPort: number }>({
@@ -175,6 +177,23 @@ export const test = base.extend<ExtensionFixtures, { pagesPort: number }>({
   stored: async ({ serviceWorker }, use) => {
     await use((key) =>
       serviceWorker.evaluate(async (k) => (await chrome.storage.local.get(k))[k], key),
+    );
+  },
+
+  badge: async ({ serviceWorker }, use) => {
+    await use((url) =>
+      serviceWorker.evaluate(async (u) => {
+        const host = new URL(u).host;
+        const tab = (await chrome.tabs.query({})).find(
+          (t) => t.url && new URL(t.url).host === host,
+        );
+        if (tab?.id === undefined) throw new Error(`no tab shows ${host}`);
+        const tabId = tab.id;
+        return {
+          text: await chrome.action.getBadgeText({ tabId }),
+          title: await chrome.action.getTitle({ tabId }),
+        };
+      }, url),
     );
   },
 });
