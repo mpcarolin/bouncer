@@ -67,11 +67,17 @@ function atPageEdge(el: Element): boolean {
 
 /**
  * §2a's in-flow case: a banner in the page's normal flow (GOV.UK's style) rather than an overlay.
- * It names itself a consent banner, sits outside the page's main content, and sits at the top or
- * the bottom of the page. Its text must also carry consent wording (`qualify`).
+ * It names itself a consent banner, sits outside the page's main content and holds none of it
+ * (a wrapper of the whole page, `div#app.cookie-banner-visible`, is not a banner), and sits at the
+ * top or the bottom of the page. Its text must also carry consent wording (`qualify`).
  */
 function isInFlowBanner(el: Element): boolean {
-  return namesItselfABanner(el) && !inPageContent(el) && atPageEdge(el);
+  return (
+    namesItselfABanner(el) &&
+    !inPageContent(el) &&
+    atPageEdge(el) &&
+    deepAll(el, PAGE_CONTENT).length === 0
+  );
 }
 
 function sameOriginLinks(el: Element): number {

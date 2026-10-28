@@ -162,6 +162,11 @@ describe("findCandidates", () => {
       expect(findCandidates(document)).toEqual([]);
     });
 
+    it("passes over a self-named page wrapper that holds the page's main content", () => {
+      mount(`<div id="app" class="cookie-banner-visible">${PARLIAMENT}${PAGE}</div>`);
+      expect(findCandidates(document).map((c) => c.el.id)).toEqual(["p-cookie-banner"]);
+    });
+
     it("ignores an in-flow element that names itself but has privacy wording only", () => {
       mount(`<div class="cookie-notice">We respect your privacy. <button>OK</button></div>`);
       expect(findCandidates(document)).toEqual([]);
