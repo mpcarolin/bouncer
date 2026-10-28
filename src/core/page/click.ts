@@ -1,5 +1,6 @@
 // Every click Bouncer makes goes through `safeClick`: it never navigates, scrolls or clicks a
-// detached element. `captureFocus` undoes focus traps the flow may have triggered.
+// detached element, and the control has focus only for its click. `captureFocus` undoes focus
+// traps the flow may have triggered.
 import { SUBMIT_GUARD_MS } from "../config.ts";
 import { isFragmentLink, submitterOf } from "./clickable.ts";
 import { parentOf } from "./dom.ts";
@@ -150,6 +151,7 @@ export function safeClick(el: Element, nav: NavigationWatch): ClickResult {
     path.addEventListener("submit", onSubmit);
     path.addEventListener("formdata", onFormData, true);
   }
+  const unfocus = focusForClick(el);
   try {
     // SVG elements have no click(); a synthetic click activates their links just the same.
     if (typeof (el as HTMLElement).click === "function") (el as HTMLElement).click();
@@ -159,6 +161,7 @@ export function safeClick(el: Element, nav: NavigationWatch): ClickResult {
       );
     }
   } finally {
+    unfocus();
     // `once` only removes it if the click reached it.
     if (guarded) el.removeEventListener("click", guard);
     if (form) {
@@ -174,6 +177,41 @@ export function safeClick(el: Element, nav: NavigationWatch): ClickResult {
   }
   if (nav.started()) return { ok: false, reason: "navigation", hashGuardUsed: guarded, ...submit };
   return { ok: true, hashGuardUsed: guarded, ...submit };
+}
+
+const NOT_TYPED_IN = new Set(["button", "submit", "reset", "image", "checkbox", "radio"]);
+
+/** A field someone may be typing in. */
+function isEditable(el: Element | null): boolean {
+  if (el instanceof HTMLInputElement) return !NOT_TYPED_IN.has(el.type);
+  return (
+    el instanceof HTMLTextAreaElement ||
+    el instanceof HTMLSelectElement ||
+    (el instanceof HTMLElement && el.isContentEditable)
+  );
+}
+
+/**
+ * A user's click focuses the control first, and some pages read `document.activeElement` to
+ * tell which button it was (ons.gov.uk), so `el` has focus for the click, and the returned
+ * function puts focus back where it was at once (Goal 4). Never while a field has focus: someone
+ * may be typing in it.
+ */
+function focusForClick(el: Element): () => void {
+  const doc = el.ownerDocument;
+  const before = deepActive(doc);
+  const target = el as HTMLElement;
+  if (isEditable(before) || before === el || typeof target.focus !== "function") return () => {};
+  target.focus({ preventScroll: true });
+  return () => {
+    // Focus the page moved during the click is the page's.
+    if (deepActive(doc) !== el) return;
+    if (before && before !== doc.body && before.isConnected) {
+      (before as HTMLElement).focus({ preventScroll: true });
+    } else {
+      target.blur();
+    }
+  };
 }
 
 function deepActive(doc: Document): Element | null {

@@ -207,6 +207,59 @@ describe("safeClick: the submit guard", () => {
   });
 });
 
+describe("safeClick: focus for the click", () => {
+  /** ons.gov.uk's banner: its submit handler reads which button has focus, not the submitter. */
+  const onsForm = () => {
+    const root = mount(`<button id=elsewhere>Elsewhere</button><input id=q>
+      <form id=f action="/accept-all"><button type=submit data-action=accept id=acc>Accept</button>
+      <button type=submit data-action=reject id=rej>Reject</button></form>`);
+    const read: (string | null)[] = [];
+    root.querySelector("#f")?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      read.push(document.activeElement?.getAttribute("data-action") ?? null);
+    });
+    const el = (id: string) => root.querySelector(`#${id}`) as HTMLElement;
+    return { read, el };
+  };
+
+  test("the page sees the clicked control focused during the click; focus goes back after", () => {
+    const { read, el } = onsForm();
+    el("elsewhere").focus();
+    expect(safeClick(el("rej"), nav)).toEqual({ ok: true, hashGuardUsed: false });
+    expect(read).toEqual(["reject"]);
+    expect(document.activeElement).toBe(el("elsewhere"));
+  });
+
+  test("with Accept focused, a click on Reject is read as Reject", () => {
+    const { read, el } = onsForm();
+    el("acc").focus();
+    safeClick(el("rej"), nav);
+    expect(read).toEqual(["reject"]);
+    expect(document.activeElement).toBe(el("acc"));
+  });
+
+  test("nothing focused before: nothing focused after", () => {
+    const { read, el } = onsForm();
+    (document.activeElement as HTMLElement | null)?.blur();
+    safeClick(el("rej"), nav);
+    expect(read).toEqual(["reject"]);
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  test("a field being typed in keeps its focus: never blurred", () => {
+    const { read, el } = onsForm();
+    const q = el("q");
+    q.focus();
+    let blurs = 0;
+    q.addEventListener("blur", () => blurs++);
+    safeClick(el("rej"), nav);
+    expect(blurs).toBe(0);
+    expect(document.activeElement).toBe(q);
+    // The page can't tell which button it was, so it does nothing: nothing wrong is recorded.
+    expect(read).toEqual([null]);
+  });
+});
+
 describe("NavigationWatch", () => {
   test("beforeunload marks started; dispose stops listening", () => {
     const w = new NavigationWatch(window);

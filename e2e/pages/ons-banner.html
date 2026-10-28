@@ -20,11 +20,15 @@
 <main><p>Expected: the in-flow banner is found; "Reject additional cookies", a submit button of a form whose own action accepts all, is clicked behind the submit guard, so nothing is requested or navigated; the page's own handler records the refusal and shows a confirmation, whose "Hide" closes the banner: dismissed.</p></main>
 <div id="status">consent: unset</div>
 <script>
-// As ons.gov.uk does: the page's script handles the submission itself, then confirms the choice.
+// As ons.gov.uk does (sixteens main.js, submitCookieForm): the page's script handles the
+// submission itself, tells the buttons apart by which one has focus, then confirms the choice.
 const form = document.getElementById("global-cookie-message");
 form.addEventListener("submit", (e) => {
   e.preventDefault();
-  const reject = e.submitter?.dataset.action === "reject";
+  for (const b of form.querySelectorAll("button[type=submit]")) b.classList.add("btn--primary-disabled");
+  const action = document.activeElement?.getAttribute("data-action");
+  if (action !== "accept" && action !== "reject") return;
+  const reject = action === "reject";
   const optional = !reject;
   document.cookie = `ons_cookie_policy={'essential':true,'settings':${optional},'usage':${optional},'campaigns':${optional}}; path=/`;
   document.getElementById("status").textContent = `consent: ${reject ? "rejected" : "accepted"}`;
