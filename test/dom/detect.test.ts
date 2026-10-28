@@ -162,6 +162,18 @@ describe("findCandidates", () => {
       expect(findCandidates(document)).toEqual([]);
     });
 
+    it("never takes the parts of an overlay for in-flow banners, even once the overlay is rejected", () => {
+      // Shaped on lemonde.fr's wall: a fixed overlay whose own parts name themselves.
+      mount(`<div class="gdpr-lmd-wall" style="position:fixed;inset:0;z-index:10000001;background:#fff">
+        <div class="gdpr-lmd-wall__wrapper"><a href="#">Reject all cookies</a>
+        <div class="gdpr-lmd-wall__content"><p>We and our partners use cookies.</p></div>
+        <footer class="gdpr-lmd-wall__footer"><button>Accept</button>
+        <a href="#">Cookie settings</a></footer></div></div>${PAGE}`);
+      const wall = document.querySelector(".gdpr-lmd-wall") as Element;
+      expect(findCandidates(document).map((c) => c.el)).toEqual([wall]);
+      expect(findCandidates(document, (el) => el === wall).map((c) => c.el)).toEqual([wall]);
+    });
+
     it("passes over a self-named page wrapper that holds the page's main content", () => {
       mount(`<div id="app" class="cookie-banner-visible">${PARLIAMENT}${PAGE}</div>`);
       expect(findCandidates(document).map((c) => c.el.id)).toEqual(["p-cookie-banner"]);

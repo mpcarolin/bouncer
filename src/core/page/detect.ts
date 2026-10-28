@@ -65,18 +65,26 @@ function atPageEdge(el: Element): boolean {
   return r.top + win.scrollY < win.innerHeight || r.bottom + win.scrollY > end - win.innerHeight;
 }
 
+/** Inside an overlay: part of a dialog (its wrapper, its footer), not something in the page's flow. */
+function inOverlay(el: Element): boolean {
+  for (let n = parentOf(el); n; n = parentOf(n)) if (isOverlay(n)) return true;
+  return false;
+}
+
 /**
  * §2a's in-flow case: a banner in the page's normal flow (GOV.UK's style) rather than an overlay.
  * It names itself a consent banner, sits outside the page's main content and holds none of it
- * (a wrapper of the whole page, `div#app.cookie-banner-visible`, is not a banner), and sits at the
- * top or the bottom of the page. Its text must also carry consent wording (`qualify`).
+ * (a wrapper of the whole page, `div#app.cookie-banner-visible`, is not a banner), sits at the
+ * top or the bottom of the page, and isn't part of an overlay (whose gate verdict covers its
+ * parts). Its text must also carry consent wording (`qualify`).
  */
 function isInFlowBanner(el: Element): boolean {
   return (
     namesItselfABanner(el) &&
     !inPageContent(el) &&
     atPageEdge(el) &&
-    deepAll(el, PAGE_CONTENT).length === 0
+    deepAll(el, PAGE_CONTENT).length === 0 &&
+    !inOverlay(el)
   );
 }
 
