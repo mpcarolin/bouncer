@@ -1,0 +1,26 @@
+<!doctype html><html><head><meta charset="utf-8"><title>GOV.UK-style banner that confirms the refusal</title><style>
+body { font: 16px system-ui; margin: 0; } main { padding: 24px; height: 3000px; }
+.cookies-banner { background: #eee; padding: 16px; } .cookies-banner[hidden] { display: none; }
+</style></head>
+<body>
+<section><form id="cookie-confirm" class="cookies-banner" aria-label="cookie banner" action="/accept-all">
+  <div class="cookies-banner__primary">
+    <p>Essential cookies make this website work. We'd like to set additional cookies to understand how you use the site.</p>
+    <button type="submit" data-action="accept">Accept additional cookies</button>
+    <button type="submit" data-action="reject">Reject additional cookies</button>
+  </div>
+  <div class="cookies-banner__confirmation" hidden>
+    <p>You have rejected all additional cookies.</p>
+    <button type="button" id="hide-banner" onclick="window.__clicked='hide'; document.getElementById('cookie-confirm').hidden = true">Hide</button>
+  </div>
+</form></section>
+<main><h1>A banner in the page's flow that confirms the choice</h1><p>Expected: "Reject additional cookies" is clicked; the page records the refusal and shows a confirmation in the banner, whose new "Hide" is clicked: dismissed. With Close set to "leave it", Hide is not clicked: dismissed (unverified).</p></main>
+<script>
+document.getElementById("cookie-confirm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  window.__clicked = e.submitter?.dataset.action;
+  e.currentTarget.querySelector(".cookies-banner__primary").hidden = true;
+  e.currentTarget.querySelector(".cookies-banner__confirmation").hidden = false;
+});
+</script>
+</body></html>

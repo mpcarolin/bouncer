@@ -574,3 +574,77 @@ describe("OwnPath, stage 1", () => {
     expect(document.body.style.overflow).toBe("");
   });
 });
+
+describe("OwnPath: a banner that confirms the refusal (§2g)", () => {
+  test("a new Hide in the still-shown banner is clicked once → dismissed, both clicks logged", async () => {
+    mountPage("confirmation");
+    const banner = byId("cookie-confirm");
+    const h = await start();
+    const e = await h.path.done;
+    expect(e).toMatchObject({
+      outcome: "dismissed",
+      verification: "verified",
+      clicked: [
+        { text: "Reject additional cookies", aiOnly: false },
+        { text: "Hide", aiOnly: false },
+      ],
+    });
+    expect(e.notes).toContain("confirmation:closed");
+    expect(window.__clicked).toBe("hide");
+    expect(banner.hidden).toBe(true);
+    expect(banner.hasAttribute(HIDDEN)).toBe(false);
+  });
+
+  test("with Close set to leave it, Hide is not clicked → dismissed_unverified, noted", async () => {
+    mountPage("confirmation");
+    const banner = byId("cookie-confirm");
+    const h = await start({ settings: { closeAction: "leave" } });
+    const e = await h.path.done;
+    expect(e).toMatchObject({
+      outcome: "dismissed_unverified",
+      clicked: [{ text: "Reject additional cookies", aiOnly: false }],
+    });
+    expect(e.notes).toContain("confirmation:left");
+    expect(window.__clicked).toBe("reject");
+    expect(h.clicks).not.toContain(byId("hide-banner"));
+    // The confirmation is the user's to close: shown again, untouched.
+    expect(banner.hidden).toBe(false);
+    expect(banner.hasAttribute(HIDDEN)).toBe(false);
+  });
+
+  test("a close control the banner had before the click doesn't count → failed, not_gone", async () => {
+    mount(`<div id="cookie-had-hide" style="position:fixed;bottom:0;left:0;right:0;z-index:9999">
+      <p id="msg">We use cookies for analytics.</p>
+      <button onclick="document.getElementById('msg').textContent='You rejected cookies.'">Reject all</button>
+      <button onclick="window.__clicked='hide'">Hide</button></div>`);
+    const h = await start();
+    const e = await h.path.done;
+    expect(e).toMatchObject({
+      outcome: "failed",
+      reason: "not_gone",
+      clicked: [{ text: "Reject all", aiOnly: false }],
+    });
+    expect(e.notes.some((n) => n.startsWith("confirmation:"))).toBe(false);
+    expect(window.__clicked).toBeUndefined();
+  });
+
+  test("a settings panel opened in the banner: its × was there before the save → failed, not_gone", async () => {
+    mount(`<div id="cookie-inline" style="position:fixed;bottom:0;left:0;right:0;z-index:9999">
+      <p>We use cookies for analytics.</p>
+      <button onclick="document.getElementById('prefs').hidden=false">Cookie settings</button>
+      <button onclick="window.__clicked='accept'; this.parentElement.remove()">Accept all</button>
+      <div id="prefs" hidden><label><input type="checkbox" checked> Analytics cookies</label>
+        <button onclick="window.__clicked='save'">Save choices</button>
+        <button aria-label="Close" onclick="window.__clicked='close'; this.closest('#cookie-inline').remove()">×</button>
+      </div></div>`);
+    const h = await start();
+    const e = await h.path.done;
+    expect(e).toMatchObject({
+      outcome: "failed",
+      reason: "not_gone",
+      clicked: [{ text: "Cookie settings" }, { text: "Save choices" }],
+    });
+    expect(e.notes.some((n) => n.startsWith("confirmation:"))).toBe(false);
+    expect(window.__clicked).toBe("save");
+  });
+});

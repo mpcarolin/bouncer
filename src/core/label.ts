@@ -50,7 +50,7 @@ const negatedNecessary = new RegExp(
 );
 const OPTOUT_RE = /do not sell|don.?t sell|do not share|opt.?out|limit the use/;
 const CLOSE_RE =
-  /^(?:(?:×|x|✕|✖|✗|skip|lukk|luk|schließen|schliessen|fermer|cerrar|chiudi|sluiten|stang|sulje|zamknij|fechar)|(?:close|dismiss)(?: (?:this|the|cookie|cookies|preference|preferences|privacy|consent|settings|banner|dialog|popup|pop-up|modal|notice|message|window|panel|center|centre))*)$/;
+  /^(?:(?:×|x|✕|✖|✗|skip|lukk|luk|schließen|schliessen|fermer|cerrar|chiudi|sluiten|stang|sulje|zamknij|fechar)|(?:close|dismiss|hide)(?: (?:this|the|cookie|cookies|preference|preferences|privacy|consent|settings|banner|dialog|popup|pop-up|modal|notice|message|window|panel|center|centre))*)$/;
 const saveWord = wordRe(words(SAVE_VERBS));
 const saveStem = stemRe(stems(SAVE_VERBS));
 

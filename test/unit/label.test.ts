@@ -126,6 +126,15 @@ test("regex settings with an accept verb is vetoed", () => {
   });
 });
 
+test("hide wording is close, in the same anchored form as close and dismiss", () => {
+  for (const t of ["Hide", "Hide this message", "Hide cookie message", "Hide the cookie message"]) {
+    expect(lab([btn(t)])[0]?.label, t).toBe("close");
+  }
+  for (const t of ["Hide details", "Hide purposes", "Hide greeting"]) {
+    expect(lab([btn(t)])[0]?.label, t).not.toBe("close");
+  }
+});
+
 test("Schließen is close", () => {
   expect(lab([btn("Schließen")])[0]?.label).toBe("close");
   expect(lab([btn("Schliessen")])[0]?.label).toBe("close");

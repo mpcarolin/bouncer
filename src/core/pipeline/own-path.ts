@@ -37,6 +37,7 @@ import {
   type Outcome,
   type SerialisedBanner,
 } from "../types.ts";
+import { confirmationCheck, shownControls } from "./confirmation.ts";
 import { fastPathTarget } from "./fast-path.ts";
 import {
   modalNotConsentShowing,
@@ -537,7 +538,18 @@ export class OwnPath {
     r.acted = true;
     this.hider.hide(r.c.el, r.c.root);
     this.scroll.markAction();
-    const done = await plan.perform(this.hopDeps(r, this.actions(r)));
+    // After a refusal the banner may stay to confirm it (§2g): what it showed before the
+    // refusal's click, the last of the flow, is not that.
+    const actions = this.actions(r);
+    let before: Set<Element> | undefined;
+    if (plan.dismissed === "dismissed") {
+      const click = actions.click;
+      actions.click = (el, control, aiOnly) => {
+        before = shownControls(r.c.el);
+        return click(el, control, aiOnly);
+      };
+    }
+    const done = await plan.perform(this.hopDeps(r, actions));
     if (done.panel) r.panel = done.panel;
     if (!done.ok) return { outcome: "failed", reason: done.reason };
     r.flow = done.flow;
@@ -545,8 +557,10 @@ export class OwnPath {
     // The texts whose return as a new element means the site put the banner (or panel) back.
     const keys = new Set([r.c.key]);
     if (done.panelKey !== undefined) keys.add(done.panelKey);
-    const v = await this.verify(r, keys);
+    const v = await this.verify(r, keys, before);
     r.entry.verification = v.ok ? "verified" : v.reason;
+    // The banner confirmed the refusal and Close is set to leave it: not verified, not failed.
+    if (v.reason === "confirmation") return { outcome: "dismissed_unverified" };
     if (!v.ok) return { outcome: "failed", reason: v.reason };
     return { outcome: plan.dismissed };
   }
@@ -642,11 +656,13 @@ export class OwnPath {
   /**
    * §2g: the banner and, after a hop, the panel (which held the last clicked control) gone
    * within the window, and staying gone. In OneTrust-style flows the banner goes as the panel
-   * opens, so the banner alone would pass while the panel is still open.
+   * opens, so the banner alone would pass while the panel is still open. `before`, the banner's
+   * controls before a refusal, is given to look for the banner confirming it.
    */
   private async verify(
     r: Run,
     keys: ReadonlySet<string>,
+    before?: ReadonlySet<Element>,
   ): Promise<{ ok: boolean; reason?: string }> {
     const els = this.touched(r);
     const nav = new NavigationWatch(this.d.win);
@@ -666,6 +682,13 @@ export class OwnPath {
           }
           return cameBack(fresh);
         },
+        confirmation:
+          before &&
+          confirmationCheck(r.c.el, before, {
+            closeAction: this.d.settings.closeAction,
+            click: (el, control) => this.actions(r).click(el, control, false),
+            note: (s) => r.entry.notes.push(s),
+          }),
       });
       if (v.ok) r.entry.t.gone = goneAt ?? this.clock.now();
       return v;

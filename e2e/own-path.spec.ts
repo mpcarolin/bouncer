@@ -98,7 +98,7 @@ test("hash-link-reject: a reject link to #… is clicked without changing the ha
   expect(page.url()).toBe(before);
 });
 
-test("ons-banner: a reject that submits an accept-all form is clicked; nothing is requested or navigated", async ({
+test("ons-banner: a reject that submits an accept-all form is clicked, then the confirmation's Hide; nothing is requested or navigated", async ({
   page,
   pageUrl,
   decided,
@@ -114,12 +114,16 @@ test("ons-banner: a reject that submits an accept-all form is clicked; nothing i
   await page.goto(pageUrl("ons-banner"));
   const before = page.url();
   const entry = await decided(siteOf("ons-banner"));
-  expect(texts(entry.clicked)).toEqual(["Reject additional cookies"]);
+  // The banner answers the refusal with a confirmation, whose new Hide closes it (§2g).
+  expect(entry).toMatchObject({ outcome: "dismissed", verification: "verified" });
+  expect(texts(entry.clicked)).toEqual(["Reject additional cookies", "Hide"]);
+  expect(entry.notes).toContain("confirmation:closed");
   // The page's own submit handler took the click, so the guard had nothing to cancel.
   expect(entry.notes).not.toContain("submit_guard:cancelled");
   await expect(page.locator("#status")).toHaveText("consent: rejected");
-  // It answers with a confirmation in the banner, so the banner stays: not yet a dismissal.
-  expect(entry).toMatchObject({ outcome: "failed", reason: "not_gone" });
+  const policy = (await page.context().cookies()).find((c) => c.name === "ons_cookie_policy");
+  expect(decodeURIComponent(policy?.value ?? "")).toContain("'usage':false");
+  await expect(page.locator("#global-cookie-message")).toBeHidden();
   expect(submitted).toEqual([]);
   expect(page.url()).toBe(before);
   expect(navigations).toBe(1);

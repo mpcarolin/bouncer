@@ -1,7 +1,7 @@
 // Did the site itself dismiss the banner, and does it stay dismissed? Bouncer's own hiding
 // (clip-path, pointer-events) is deliberately not one of the tests here.
 import { VERIFY_GONE_MS, VERIFY_STAY_MS } from "../config.ts";
-import type { NavigationWatch } from "./click.ts";
+import type { ClickResult, NavigationWatch } from "./click.ts";
 import { deepAll, parentOf } from "./dom.ts";
 
 const POLL_MS = 100;
@@ -85,11 +85,24 @@ export interface VerifyOptions {
    * recent answer may stand (`fresh` false), and once more, `fresh`, before a pass.
    */
   reappeared?: (fresh: boolean) => boolean;
+  /**
+   * §2g's GOV.UK-style confirmation, asked on every check while phase one waits: "clicked" when it
+   * clicked the control that closes the confirmation the banner now shows (phase one then runs
+   * from that click), a result to end verification with, or null.
+   */
+  confirmation?: () => "clicked" | VerifyResult | null;
 }
 
 export interface VerifyResult {
   ok: boolean;
-  reason?: "not_gone" | "came_back" | "navigation" | "autoconsent_style";
+  /** `confirmation`: the banner confirmed the refusal, and was left to show it. */
+  reason?:
+    | "not_gone"
+    | "came_back"
+    | "navigation"
+    | "autoconsent_style"
+    | "confirmation"
+    | NonNullable<ClickResult["reason"]>;
 }
 
 /**
@@ -133,11 +146,14 @@ export async function verifyDismissed(els: Element[], o: VerifyOptions): Promise
     return null;
   };
   try {
-    const t0 = performance.now();
+    let t0 = performance.now();
     for (;;) {
       const stop = interrupted();
       if (stop) return stop;
       if (els.every(isGoneBySite)) break;
+      const confirmed = o.confirmation?.() ?? null;
+      if (confirmed === "clicked") t0 = performance.now();
+      else if (confirmed) return confirmed;
       if (performance.now() - t0 >= goneMs) return { ok: false, reason: "not_gone" };
       await tick();
     }
