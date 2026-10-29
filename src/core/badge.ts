@@ -1,4 +1,6 @@
 import type { LogEntry } from "./log.ts";
+import type { BackgroundPlatform } from "./platform.ts";
+import { report } from "./report.ts";
 import { DISMISSED } from "./types.ts";
 
 /** The toolbar icon's mark for one tab's page: a few characters on a coloured badge, and a tooltip. */
@@ -26,4 +28,9 @@ export const AI_BADGE: Badge = {
 export function badgeFor(e: Pick<LogEntry, "path" | "outcome">): Badge | null {
   if (e.outcome === "working" || !DISMISSED.has(e.outcome)) return null;
   return e.path === "ai" ? AI_BADGE : RULE_BADGE;
+}
+
+/** Marks the tab, or takes its mark off. The mark is cosmetic: failing to set it fails nothing else. */
+export function markTab(p: BackgroundPlatform, tabId: number, b: Badge | null): void {
+  p.setBadge(tabId, b).catch((e) => report(`failed to mark tab ${tabId}`, e));
 }

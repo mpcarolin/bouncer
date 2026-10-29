@@ -1,9 +1,10 @@
 import type { Arbiter } from "./arbiter.ts";
-import { badgeFor } from "./badge.ts";
+import { markTab, RULE_BADGE } from "./badge.ts";
 import { AC_OPTOUT_TIMEOUT_MS, PRERENDER_HOLDS_PER_TAB } from "./config.ts";
 import type { DecisionLog, LogEntry } from "./log.ts";
 import type { AcMessage, AutoconsentConfig, FrameMessage } from "./messages.ts";
 import type { BackgroundPlatform, Sender } from "./platform.ts";
+import { report } from "./report.ts";
 import { enabledFor, type Settings, siteOf } from "./settings.ts";
 import type { Clock, Outcome } from "./types.ts";
 
@@ -148,10 +149,6 @@ const realClock: Clock = {
   setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
   clearTimeout: (id) => clearTimeout(id),
 };
-
-function report(what: string, e: unknown): void {
-  console.error(`bouncer: ${what}`, e);
-}
 
 const hasDeadline = (tab: TabState) =>
   Object.values(tab.frames).some((f) => f.optOut?.deadline !== undefined);
@@ -572,14 +569,8 @@ export class AutoconsentHost {
   ): Promise<void> {
     this.stop(s.tabId, frameId, o, "ended");
     this.toFrame(s, 0, { type: "acOutcome", outcome });
-    this.mark(s.tabId, outcome);
+    markTab(this.p, s.tabId, RULE_BADGE);
     await this.logPatch(o, { outcome, ...patch });
-  }
-
-  /** Marks the tab's toolbar icon. The mark is cosmetic: failing to set it fails nothing else. */
-  private mark(tabId: number, outcome: Outcome): void {
-    const b = badgeFor({ path: "autoconsent", outcome });
-    if (b) this.p.setBadge(tabId, b).catch((e) => report(`failed to mark tab ${tabId}`, e));
   }
 
   /**

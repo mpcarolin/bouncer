@@ -830,8 +830,7 @@ export class OwnPath {
         ended = true;
         if (timer !== undefined) this.clock.clearTimeout(timer);
         this.waiters.delete(check);
-        if (how)
-          r.entry.notes.push(`claim_wait:${how}:${this.clock.now() - (r.entry.t.found ?? 0)}`);
+        if (how) r.entry.notes.push(`claim_wait:${how}:${this.clock.now() - r.entry.at}`);
         resolve();
       };
       const check = () => {

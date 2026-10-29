@@ -49,6 +49,9 @@ class FakeEvent<A extends unknown[], R = void> {
 
 class FakeArea {
   private data = new Map<string, string>();
+  readonly onChanged = new FakeEvent<
+    [changes: Record<string, { oldValue?: unknown; newValue?: unknown }>]
+  >();
 
   get = async (key: string): Promise<Record<string, unknown>> => {
     const raw = this.data.get(key);
@@ -121,7 +124,7 @@ export interface FakeChrome {
   installed(reason: string): void;
   /** Fire `runtime.onStartup`. */
   startup(): void;
-  /** Fire `storage.onChanged` for these keys of `area`. */
+  /** Fire `onChanged` of storage area `area` for these keys. */
   storageChanged(keys: string[], area: string): void;
   /** The object installed as `globalThis.chrome`. */
   readonly chrome: typeof chrome;
@@ -140,9 +143,6 @@ export function installFakeChrome(): FakeChrome {
   const onInstalled = new FakeEvent<[details: { reason: string }]>();
   const onConnect = new FakeEvent<[port: chrome.runtime.Port]>();
   const onStartup = new FakeEvent<[]>();
-  const onStorageChanged = new FakeEvent<
-    [changes: Record<string, { oldValue?: unknown; newValue?: unknown }>, area: string]
-  >();
 
   const fc: FakeChrome = {
     sender: {
@@ -171,7 +171,7 @@ export function installFakeChrome(): FakeChrome {
       action: onClicked.listeners.length,
       installed: onInstalled.listeners.length,
       startup: onStartup.listeners.length,
-      storageChanged: onStorageChanged.listeners.length,
+      storageChanged: fc.local.onChanged.listeners.length + fc.session.onChanged.listeners.length,
     }),
     platformInfoCalls: 0,
     deliver(msg, sender = fc.sender) {
@@ -214,7 +214,9 @@ export function installFakeChrome(): FakeChrome {
     installed: (reason) => void onInstalled.fire({ reason }),
     startup: () => void onStartup.fire(),
     storageChanged: (keys, area) =>
-      void onStorageChanged.fire(Object.fromEntries(keys.map((k) => [k, { newValue: 1 }])), area),
+      void (area === "local" ? fc.local : fc.session).onChanged.fire(
+        Object.fromEntries(keys.map((k) => [k, { newValue: 1 }])),
+      ),
     chrome: undefined as unknown as typeof chrome,
   };
 
@@ -261,7 +263,7 @@ export function installFakeChrome(): FakeChrome {
         ]),
       ),
     },
-    storage: { local: fc.local, session: fc.session, onChanged: onStorageChanged },
+    storage: { local: fc.local, session: fc.session },
     scripting: {
       executeScript: async (injection: ExecuteScriptCall) => {
         fc.scripts.push(injection);

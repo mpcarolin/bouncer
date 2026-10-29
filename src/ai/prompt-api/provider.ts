@@ -196,7 +196,7 @@ export class PromptApiProvider implements AiProvider {
         const r = await timebox(entry.promise, CREATE_TIMEOUT_MS);
         if (r === TIMEOUT) {
           // Never keep a half-created base; if it lands later it destroys itself.
-          if (this.bases.get(kind) === entry) this.bases.delete(kind);
+          this.drop(kind, entry);
           return timeout();
         }
         base = r;
@@ -261,7 +261,7 @@ export class PromptApiProvider implements AiProvider {
         return s;
       })
       .catch((e) => {
-        if (this.bases.get(kind) === entry) this.bases.delete(kind);
+        this.drop(kind, entry);
         throw e;
       });
     this.bases.set(kind, entry);

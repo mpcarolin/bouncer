@@ -489,9 +489,9 @@ describe("the toolbar badge", () => {
     const { id } = await replied(
       top.send({ type: "log", entry: { ...entry("a.example"), path: "ai", outcome: "working" } }),
     );
-    expect(bg.badges.get(4) ?? null).toBeNull();
+    expect(bg.badgeOf(4)).toBeNull();
     await top.send({ type: "logPatch", id, patch: { outcome: "dismissed" } });
-    expect(bg.badges.get(4)).toEqual(AI_BADGE);
+    expect(bg.badgeOf(4)).toEqual(AI_BADGE);
 
     const other = fakeContent(bg, { tabId: 5 });
     await other.send({ type: "hello" });
@@ -499,7 +499,7 @@ describe("the toolbar badge", () => {
       type: "log",
       entry: { ...entry("b.example"), path: "learned", outcome: "dismissed_unverified" },
     });
-    expect(bg.badges.get(5)).toEqual(RULE_BADGE);
+    expect(bg.badgeOf(5)).toEqual(RULE_BADGE);
   });
 
   it("leaves the tab unmarked for a banner that wasn't dismissed", async () => {
@@ -518,11 +518,11 @@ describe("the toolbar badge", () => {
     await top.send({ type: "hello" });
     await top.send({ type: "log", entry: { ...entry("a.example"), outcome: "dismissed" } });
     await top.send({ type: "hello" });
-    expect(bg.badges.get(4)).toEqual(RULE_BADGE);
+    expect(bg.badgeOf(4)).toEqual(RULE_BADGE);
 
     top.sender.documentId = "d2"; // the tab navigated
     await top.send({ type: "hello" });
-    expect(bg.badges.get(4)).toBeNull();
+    expect(bg.badgeOf(4)).toBeNull();
   });
 
   it("is not touched by a child frame's hello, or by a sender with no tab", async () => {
@@ -531,7 +531,7 @@ describe("the toolbar badge", () => {
     await top.send({ type: "hello" });
     await top.send({ type: "log", entry: { ...entry("a.example"), outcome: "dismissed" } });
     await fakeContent(bg, { tabId: 4, frameId: 3, documentId: "child" }).send({ type: "hello" });
-    expect(bg.badges.get(4)).toEqual(RULE_BADGE);
+    expect(bg.badgeOf(4)).toEqual(RULE_BADGE);
 
     await fakePage(bg).send({
       type: "log",

@@ -10,7 +10,6 @@ import { recordBanner, replay } from "../../src/core/pipeline/replay.ts";
 import type { ContentPlatform } from "../../src/core/platform.ts";
 import { siteOf } from "../../src/core/settings.ts";
 import type { Clock, Label, SerialisedBanner } from "../../src/core/types.ts";
-import type { FakeBackground } from "../helpers/fake-platform.ts";
 import { mount, mountPage } from "../helpers/mount.ts";
 import {
   Agreeable,
@@ -249,11 +248,10 @@ describe("learned rules (§2h)", () => {
   test("a replay acts once autoconsent has looked at the page and recognised nothing, with no safety net", async () => {
     const { rule } = await learn("custom-reject");
     mountPage("custom-reject");
-    let bg: FakeBackground | undefined;
-    const h = await start({ rules: [rule], clock: noClaimCap, before: (x) => void (bg = x.bg) });
+    const h = await start({ rules: [rule], clock: noClaimCap });
     // autoconsent's looks, each beginning after the candidate was found (the first may not).
     const looks = setInterval(
-      () => void bg?.sendToFrame(1, 0, { type: "acLooked", startedAt: Date.now() }),
+      () => void h.bg.sendToFrame(1, 0, { type: "acLooked", startedAt: Date.now() }),
       50,
     );
     try {

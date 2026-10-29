@@ -1,10 +1,7 @@
 import type { AiProvider } from "./ai.ts";
 import type { BackgroundPlatform } from "./platform.ts";
+import { report } from "./report.ts";
 import { loadSettings } from "./settings.ts";
-
-function report(what: string, e: unknown): void {
-  console.error(`bouncer: ${what}`, e);
-}
 
 /**
  * Settings' `keepModelWarm`. The model session lives in the background, and Chrome stops an idle

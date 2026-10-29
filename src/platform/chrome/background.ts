@@ -112,9 +112,7 @@ export function chromeBackground(): BackgroundPlatform {
     },
 
     onLocalChanged(cb) {
-      chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === "local") cb(Object.keys(changes));
-      });
+      chrome.storage.local.onChanged.addListener((changes) => cb(Object.keys(changes)));
     },
 
     /**

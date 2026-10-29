@@ -2,13 +2,14 @@ import type { AiMeta, AiProvider, AiResult } from "./ai.ts";
 import { serveAi } from "./ai-remote.ts";
 import { Arbiter } from "./arbiter.ts";
 import { type AcLib, AutoconsentHost } from "./autoconsent-bg.ts";
-import { type Badge, badgeFor } from "./badge.ts";
+import { badgeFor, markTab } from "./badge.ts";
 import { ModelBudget } from "./budget.ts";
 import { KeepWarm } from "./keep-warm.ts";
 import { isLearnedRule, LearnedRules } from "./learned.ts";
 import { DecisionLog, type LogEntry } from "./log.ts";
 import { type AiRequest, isAcMessage, isToBackground, type ToBackground } from "./messages.ts";
 import type { BackgroundPlatform, Sender } from "./platform.ts";
+import { report } from "./report.ts";
 import { enabledFor, loadSettings, SETTINGS_KEY, siteOf } from "./settings.ts";
 
 export interface BackgroundOptions {
@@ -36,10 +37,6 @@ const refuse = (error: string): Promise<AiResult<never>> =>
     error,
     meta: { ms: 0, cold: false, onDevice: true } satisfies AiMeta,
   });
-
-function report(what: string, e: unknown): void {
-  console.error(`bouncer: ${what}`, e);
-}
 
 /** The settings page's `site` query: the hostname of an http(s) page, else nothing. */
 function siteQuery(url: string | undefined): Record<string, string> | undefined {
@@ -105,22 +102,17 @@ export function startBackground(
     return from.tabId >= 0 && from.frameId === 0 ? siteOf(from.tabUrl || from.url) : "";
   }
 
-  /** The toolbar mark is cosmetic: failing to set it fails nothing else. */
-  function badge(tabId: number, b: Badge | null): void {
-    p.setBadge(tabId, b).catch((e) => report(`failed to mark tab ${tabId}`, e));
-  }
-
   /** Marks the sender's tab when its page's banner was dismissed. */
   function marked(e: Pick<LogEntry, "path" | "outcome">, from: Sender): void {
     const b = badgeFor(e);
-    if (b && from.tabId >= 0) badge(from.tabId, b);
+    if (b && from.tabId >= 0) markTab(p, from.tabId, b);
   }
 
   async function hello(from: Sender) {
     const hasTab = from.tabId >= 0;
     if (hasTab && from.frameId === 0) {
       // A new page starts unmarked: the mark was the last page's.
-      if (await arbiter.topDocument(from.tabId, from.documentId)) badge(from.tabId, null);
+      if (await arbiter.topDocument(from.tabId, from.documentId)) markTab(p, from.tabId, null);
       dropBudgets(from.tabId, from.documentId); // the earlier documents are gone
       // A prerendered page is shown: autoconsent's held inits there may now be answered. Not
       // awaited, as for autoconsent's own messages: a failure there is no reason to stand down.
@@ -232,11 +224,12 @@ export function startBackground(
     p.openPage("onboarding").catch((e) => report("failed to open onboarding", e));
   });
 
-  // Each time the worker starts, with the browser, and as the setting changes.
+  // Each time the worker starts, and as the setting changes. Listening for the browser's start is
+  // what starts the worker with it; the call below then does the work.
   const warmth = new KeepWarm(p, provider);
   const keepWarm = () =>
     void warmth.sync().catch((e) => report("failed to apply keepModelWarm", e));
-  p.onStartup(keepWarm);
+  p.onStartup(() => {});
   p.onLocalChanged((keys) => {
     if (keys.includes(SETTINGS_KEY)) keepWarm();
   });

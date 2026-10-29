@@ -81,8 +81,8 @@ export interface FakeBackground extends BackgroundPlatform {
   opened: PageName[];
   /** The same calls with their query strings. */
   openedWith: { page: PageName; query?: Record<string, string> }[];
-  /** Each tab's toolbar mark, as the last `setBadge` for it left it. */
-  badges: Map<number, Badge | null>;
+  /** The tab's toolbar mark, as the last `setBadge` for it left it. */
+  badgeOf(tabId: number): Badge | null;
   /** Every `setBadge` call, in order. */
   badgeCalls: { tabId: number; badge: Badge | null }[];
   /** Every `sendToFrame` call, delivered or not, in order. */
@@ -117,7 +117,7 @@ export function fakeBackground(): FakeBackground {
     },
     opened: [],
     openedWith: [],
-    badges: new Map(),
+    badgeOf: (tabId) => bg.badgeCalls.filter((c) => c.tabId === tabId).at(-1)?.badge ?? null,
     badgeCalls: [],
     frameSends: [],
     mainWorldCalls: [],
@@ -168,7 +168,6 @@ export function fakeBackground(): FakeBackground {
     },
     async setBadge(tabId, badge) {
       bg.badgeCalls.push({ tabId, badge: structuredClone(badge) });
-      bg.badges.set(tabId, structuredClone(badge));
     },
     async runInMainWorld(tabId, documentId, snippetId) {
       bg.mainWorldCalls.push({ tabId, documentId, snippetId });

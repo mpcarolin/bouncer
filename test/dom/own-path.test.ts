@@ -663,12 +663,11 @@ describe("OwnPath: the claim wait ends at autoconsent's look (§2b)", () => {
     provider.onCall = (op) => {
       if (op === "isConsentDialog" && bg) onGate(bg);
     };
-    const h = await start({ provider, clock, before: (x) => void (bg = x.bg) });
-    return { h, bg: bg as FakeBackground };
+    return start({ provider, clock, before: (x) => void (bg = x.bg) });
   }
 
   test("a look that began after the candidate was found, recognising nothing, ends it: Bouncer acts without the safety net", async () => {
-    const { h } = await startWith((bg) => void bg.sendToFrame(1, 0, looked(Date.now())));
+    const h = await startWith((bg) => void bg.sendToFrame(1, 0, looked(Date.now())));
 
     const e = await h.path.done;
     expect(e).toMatchObject({ outcome: "dismissed", path: "ai" });
@@ -683,7 +682,7 @@ describe("OwnPath: the claim wait ends at autoconsent's look (§2b)", () => {
       setTimeout: (fn, ms) => noClaimCap.setTimeout(fn, ms === 0 ? 2000 : ms),
     };
     let watching = 0;
-    const { h } = await startWith((bg) => void bg.sendToFrame(1, 0, looked(watching)), held);
+    const h = await startWith((bg) => void bg.sendToFrame(1, 0, looked(watching)), held);
     watching = Date.now();
 
     const e = await h.path.done;
@@ -692,21 +691,19 @@ describe("OwnPath: the claim wait ends at autoconsent's look (§2b)", () => {
   });
 
   test("a look that began before the page last changed doesn't end it", async () => {
-    const { h, bg } = await startWith(
-      (bg) => void bg.sendToFrame(1, 0, looked(Date.now() - 60_000)),
-    );
+    const h = await startWith((bg) => void bg.sendToFrame(1, 0, looked(Date.now() - 60_000)));
     await until(() => h.provider.calls.includes("isConsentDialog"));
     await sleep(300);
     expect(h.clicks).toEqual([]);
     expect(await h.app.arbiter.owner(1)).toBe("none");
 
-    void bg.sendToFrame(1, 0, looked(Date.now()));
+    void h.bg.sendToFrame(1, 0, looked(Date.now()));
     const e = await h.path.done;
     expect(e.outcome).toBe("dismissed");
   });
 
   test("autoconsent's detection ending ends it, and the entry says so", async () => {
-    const { h } = await startWith((bg) => void bg.sendToFrame(1, 0, { type: "acDetectionEnded" }));
+    const h = await startWith((bg) => void bg.sendToFrame(1, 0, { type: "acDetectionEnded" }));
 
     const e = await h.path.done;
     expect(e.outcome).toBe("dismissed");
@@ -714,7 +711,7 @@ describe("OwnPath: the claim wait ends at autoconsent's look (§2b)", () => {
   });
 
   test("with no look, the safety net ends it, and the entry says so", async () => {
-    const { h } = await startWith(() => {}, fastClock);
+    const h = await startWith(() => {}, fastClock);
 
     const e = await h.path.done;
     expect(e.outcome).toBe("dismissed");
@@ -722,7 +719,7 @@ describe("OwnPath: the claim wait ends at autoconsent's look (§2b)", () => {
   });
 
   test("autoconsent recognising the banner after its look still stands Bouncer down", async () => {
-    const { h } = await startWith((bg) => {
+    const h = await startWith((bg) => {
       void bg.sendToFrame(1, 0, looked(Date.now()));
       void bg.sendToFrame(1, 0, { type: "acDetected" });
     });
